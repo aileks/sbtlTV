@@ -1,0 +1,379 @@
+/* Main container - full screen, TRANSPARENT so mpv video shows through */
+.app {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  background: transparent;
+  color: white;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Custom title bar for frameless window */
+.title-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  -webkit-app-region: drag;
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.app:hover .title-bar,
+.title-bar:hover {
+  opacity: 1;
+}
+
+.title-bar-title {
+  padding-left: 12px;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+.window-controls {
+  display: flex;
+  -webkit-app-region: no-drag;
+}
+
+.window-controls button {
+  width: 46px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.window-controls button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.window-controls button.close:hover {
+  background: #e81123;
+}
+
+/* Video layer - mpv renders BEHIND this via --wid embedding */
+.video-background {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  pointer-events: none;
+}
+
+/* Placeholder shown before any stream is loaded */
+.placeholder {
+  text-align: center;
+  opacity: 0.7;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 40px 60px;
+  border-radius: 12px;
+  pointer-events: auto;
+}
+
+.placeholder h1 {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+  font-weight: 300;
+}
+
+.placeholder p {
+  font-size: 1.2rem;
+  opacity: 0.7;
+}
+
+/* Now playing indicator */
+.now-playing {
+  position: absolute;
+  top: 50px;
+  left: 20px;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  pointer-events: auto;
+}
+
+/* Channel Info Overlay - TV style */
+.channel-info {
+  position: absolute;
+  top: 50px;
+  right: 40px;
+  background: rgba(0, 0, 0, 0.85);
+  padding: 20px 30px;
+  border-radius: 8px;
+  border-left: 4px solid #00d4ff;
+  animation: slideIn 0.2s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.channel-number {
+  font-size: 3rem;
+  font-weight: 700;
+  color: #00d4ff;
+  line-height: 1;
+}
+
+.channel-name {
+  font-size: 1.5rem;
+  margin-top: 5px;
+  font-weight: 300;
+}
+
+.channel-hint {
+  font-size: 0.8rem;
+  opacity: 0.6;
+  margin-top: 10px;
+}
+
+/* Error Banner */
+.error-banner {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  right: 0;
+  background: #e74c3c;
+  padding: 10px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 100;
+}
+
+.error-banner button {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid white;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* Control Bar - bottom overlay */
+.control-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.95), rgba(0, 0, 0, 0.7));
+  padding: 15px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  z-index: 50;
+}
+
+.control-bar.hidden {
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.control-bar.visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+/* Status indicator */
+.status {
+  display: flex;
+  align-items: center;
+}
+
+.indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.indicator::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e74c3c;
+}
+
+.indicator.ready::before {
+  background: #2ecc71;
+}
+
+/* Stream selector */
+.stream-selector {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.stream-selector label {
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+.stream-selector button {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.stream-selector button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: #00d4ff;
+}
+
+.stream-selector button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.stream-selector button.active {
+  background: #00d4ff;
+  border-color: #00d4ff;
+  color: black;
+}
+
+/* Custom URL input */
+.custom-url {
+  display: flex;
+  gap: 10px;
+}
+
+.custom-url input {
+  flex: 1;
+  max-width: 400px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.custom-url input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.custom-url input:focus {
+  outline: none;
+  border-color: #00d4ff;
+}
+
+.custom-url button {
+  background: #00d4ff;
+  border: none;
+  color: black;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.custom-url button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Playback controls */
+.playback-controls {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.playback-controls button {
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background 0.2s;
+}
+
+.playback-controls button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.playback-controls button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Volume control */
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.volume-control button {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 5px;
+}
+
+.volume-control input[type='range'] {
+  width: 100px;
+  accent-color: #00d4ff;
+}
+
+.volume-control span {
+  font-size: 0.85rem;
+  min-width: 40px;
+  text-align: right;
+  opacity: 0.8;
+}
+
+/* Keyboard hints */
+.keyboard-hints {
+  display: flex;
+  gap: 20px;
+  font-size: 0.8rem;
+  opacity: 0.5;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 10px;
+}
+
+.keyboard-hints span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
