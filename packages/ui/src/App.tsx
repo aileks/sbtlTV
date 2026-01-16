@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { MpvStatus } from './types/electron';
 import { Settings } from './components/Settings';
+import { Sidebar, type View } from './components/Sidebar';
 
 // Sample streams for testing
 const SAMPLE_STREAMS = [
@@ -21,7 +22,7 @@ function App() {
   const [showControls, setShowControls] = useState(true);
   const [showChannelInfo, setShowChannelInfo] = useState(false);
   const [channelIndex, setChannelIndex] = useState(0);
-  const [showSettings, setShowSettings] = useState(false);
+  const [activeView, setActiveView] = useState<View>('none');
 
   // Custom stream URL input
   const [customUrl, setCustomUrl] = useState('');
@@ -231,9 +232,6 @@ function App() {
           <span className={`indicator ${mpvReady ? 'ready' : 'waiting'}`}>
             {mpvReady ? 'mpv ready' : 'Waiting for mpv...'}
           </span>
-          <button className="settings-btn" onClick={() => setShowSettings(true)}>
-            ⚙️ Settings
-          </button>
         </div>
 
         {/* Stream selector */}
@@ -306,8 +304,15 @@ function App() {
         </div>
       </div>
 
-      {/* Settings Modal */}
-      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+      {/* Sidebar Navigation */}
+      <Sidebar
+        activeView={activeView}
+        onViewChange={setActiveView}
+        visible={showControls}
+      />
+
+      {/* Settings Panel */}
+      {activeView === 'settings' && <Settings onClose={() => setActiveView('none')} />}
     </div>
   );
 }
