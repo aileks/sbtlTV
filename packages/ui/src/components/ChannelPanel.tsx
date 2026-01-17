@@ -34,36 +34,60 @@ export function ChannelPanel({
   // Ref for measuring the grid container width
   const gridContainerRef = useRef<HTMLDivElement>(null);
 
-  // Measure available width for the program grid (RAF batched for smooth animations)
+  // Track window width to differentiate window resize vs category toggle
+  const lastWindowWidth = useRef(typeof window !== 'undefined' ? window.innerWidth : 0);
+
+  // Measure available width - only recalculate on actual window resize
+  // Category toggles just clip visually (CSS flex handles it)
   useEffect(() => {
     const container = gridContainerRef.current;
     if (!container) return;
 
     let rafId: number | null = null;
-    let pendingWidth: number | null = null;
 
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
-      if (entry) {
-        // Store the pending width
-        pendingWidth = entry.contentRect.width - CHANNEL_COLUMN_WIDTH;
+      if (!entry) return;
 
-        // Batch updates to next animation frame
+      const currentWindowWidth = window.innerWidth;
+      const isWindowResize = currentWindowWidth !== lastWindowWidth.current;
+
+      if (isWindowResize) {
+        // Actual window resize - recalculate program positions
+        lastWindowWidth.current = currentWindowWidth;
+
         if (rafId === null) {
           rafId = requestAnimationFrame(() => {
-            if (pendingWidth !== null) {
-              setAvailableWidth(Math.max(pendingWidth, 200));
-            }
+            const width = entry.contentRect.width - CHANNEL_COLUMN_WIDTH;
+            setAvailableWidth(Math.max(width, 200));
             rafId = null;
           });
         }
       }
+      // Category toggle: skip recalculation, CSS flex handles visual clipping
     });
 
+    // Also listen for actual window resize
+    const handleWindowResize = () => {
+      const container = gridContainerRef.current;
+      if (!container) return;
+
+      lastWindowWidth.current = window.innerWidth;
+      const width = container.getBoundingClientRect().width - CHANNEL_COLUMN_WIDTH;
+      setAvailableWidth(Math.max(width, 200));
+    };
+
+    // Set initial width
+    const initialWidth = container.getBoundingClientRect().width - CHANNEL_COLUMN_WIDTH;
+    setAvailableWidth(Math.max(initialWidth, 200));
+
     observer.observe(container);
+    window.addEventListener('resize', handleWindowResize);
+
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
       observer.disconnect();
+      window.removeEventListener('resize', handleWindowResize);
     };
   }, []);
 

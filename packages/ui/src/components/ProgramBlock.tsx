@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import type { StoredProgram } from '../db';
 import './ProgramBlock.css';
 
@@ -55,7 +55,7 @@ function getProgramStyle(
   };
 }
 
-export function ProgramBlock({
+export const ProgramBlock = memo(function ProgramBlock({
   program,
   windowStart,
   windowEnd,
@@ -102,10 +102,10 @@ export function ProgramBlock({
       )}
     </div>
   );
-}
+});
 
 // Empty state for channels with no EPG data
-export function EmptyProgramBlock({ pixelsPerHour, visibleHours }: { pixelsPerHour: number; visibleHours: number }) {
+export const EmptyProgramBlock = memo(function EmptyProgramBlock({ pixelsPerHour, visibleHours }: { pixelsPerHour: number; visibleHours: number }) {
   const width = pixelsPerHour * visibleHours;
 
   return (
@@ -119,4 +119,4 @@ export function EmptyProgramBlock({ pixelsPerHour, visibleHours }: { pixelsPerHo
       <span className="program-block-title">No EPG Data</span>
     </div>
   );
-}
+});
