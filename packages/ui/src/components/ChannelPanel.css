@@ -7,26 +7,31 @@
   bottom: 0;
   padding-left: 70px;
   box-sizing: border-box;
-  background: rgba(0, 0, 0, 0.92);
-  backdrop-filter: blur(40px);
+  background: rgba(0, 0, 0, 0.95);
+  backdrop-filter: blur(20px);
   display: flex;
   flex-direction: column;
   z-index: 80;
 
-  transform: translateY(100%);
+  /* GPU acceleration hints to prevent smearing */
+  transform: translate3d(0, 100%, 0);
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+
   opacity: 0;
-  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-              opacity 0.3s ease,
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.25s ease,
               padding-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .guide-panel.visible {
-  transform: translateY(0);
+  transform: translate3d(0, 0, 0);
   opacity: 1;
 }
 
 .guide-panel.hidden {
-  transform: translateY(100%);
+  transform: translate3d(0, 100%, 0);
   opacity: 0;
   pointer-events: none;
 }

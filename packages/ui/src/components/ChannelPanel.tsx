@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Virtuoso } from 'react-virtuoso';
 import { useChannels, useCategories, useProgramsInRange } from '../hooks/useChannels';
 import { useTimeGrid } from '../hooks/useTimeGrid';
-import { ProgramBlock, EmptyProgramBlock } from './ProgramBlock';
+import { ChannelRow } from './ChannelRow';
 import type { StoredChannel } from '../db';
 import './ChannelPanel.css';
 
@@ -27,7 +28,6 @@ export function ChannelPanel({
 }: ChannelPanelProps) {
   const channels = useChannels(categoryId);
   const categories = useCategories();
-  const [hoveredChannel, setHoveredChannel] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [availableWidth, setAvailableWidth] = useState(800);
 
@@ -243,78 +243,37 @@ export function ChannelPanel({
 
       {/* EPG Grid Area */}
       <div className="guide-content">
-        <div className="guide-channels">
-          {channels.map((channel, index) => {
-            const channelPrograms = programs.get(channel.stream_id) ?? [];
-
-            return (
-              <div
-                key={channel.stream_id}
-                className={`guide-channel-row ${hoveredChannel === channel.stream_id ? 'hovered' : ''}`}
-                onMouseEnter={() => setHoveredChannel(channel.stream_id)}
-                onMouseLeave={() => setHoveredChannel(null)}
-              >
-                {/* Channel info column */}
-                <div
-                  className="guide-channel-info"
-                  style={{ width: CHANNEL_COLUMN_WIDTH, minWidth: CHANNEL_COLUMN_WIDTH }}
-                  onClick={() => onPlayChannel(channel)}
-                >
-                  <span className="guide-channel-number">{index + 1}</span>
-                  <div className="guide-channel-logo">
-                    {channel.stream_icon ? (
-                      <img
-                        src={channel.stream_icon}
-                        alt=""
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <span className="logo-placeholder">{channel.name.charAt(0)}</span>
-                    )}
-                  </div>
-                  <span className="guide-channel-name">{channel.name}</span>
-                </div>
-
-                {/* Program grid - CSS handles visual width, JS only for calculations */}
-                <div className="guide-program-grid">
-                  {channelPrograms.length > 0 ? (
-                    channelPrograms.map((program) => (
-                      <ProgramBlock
-                        key={program.id}
-                        program={program}
-                        windowStart={windowStart}
-                        windowEnd={windowEnd}
-                        pixelsPerHour={pixelsPerHour}
-                        onClick={() => onPlayChannel(channel)}
-                      />
-                    ))
-                  ) : (
-                    <EmptyProgramBlock
-                      pixelsPerHour={pixelsPerHour}
-                      visibleHours={visibleHours}
-                    />
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          {channels.length === 0 && (
-            <div className="guide-empty">
-              <div className="guide-empty-icon">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <rect x="2" y="7" width="20" height="13" rx="2" />
-                  <path d="M17 2l-5 5-5-5" />
-                </svg>
-              </div>
-              <h3>No Channels</h3>
-              <p>Sync your sources to load channels</p>
-              <p className="hint">Go to Settings → Add a source → Channels will sync automatically</p>
-            </div>
+        <Virtuoso
+          data={channels}
+          className="guide-channels"
+          itemContent={(index, channel) => (
+            <ChannelRow
+              channel={channel}
+              index={index}
+              programs={programs.get(channel.stream_id) ?? []}
+              windowStart={windowStart}
+              windowEnd={windowEnd}
+              pixelsPerHour={pixelsPerHour}
+              visibleHours={visibleHours}
+              onPlay={() => onPlayChannel(channel)}
+            />
           )}
-        </div>
+          components={{
+            EmptyPlaceholder: () => (
+              <div className="guide-empty">
+                <div className="guide-empty-icon">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <rect x="2" y="7" width="20" height="13" rx="2" />
+                    <path d="M17 2l-5 5-5-5" />
+                  </svg>
+                </div>
+                <h3>No Channels</h3>
+                <p>Sync your sources to load channels</p>
+                <p className="hint">Go to Settings → Add a source → Channels will sync automatically</p>
+              </div>
+            ),
+          }}
+        />
       </div>
     </div>
   );
