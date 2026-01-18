@@ -45,9 +45,12 @@ async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
+    minWidth: 640,
+    minHeight: 480,
     backgroundColor: isWindows ? '#00000000' : '#000000',
     transparent: isWindows, // Transparent on Windows so mpv shows through
     frame: !isWindows, // Frameless on Windows (required for transparency)
+    resizable: true, // Explicit for Electron 40
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -350,6 +353,18 @@ ipcMain.handle('window-maximize', () => {
   }
 });
 ipcMain.handle('window-close', () => mainWindow?.close());
+
+// Window resize for frameless windows
+ipcMain.handle('window-get-size', () => mainWindow?.getSize());
+ipcMain.handle('window-set-size', (_event, width: number, height: number) => {
+  if (!mainWindow) return;
+  const newW = Math.max(640, Math.round(width));
+  const newH = Math.max(480, Math.round(height));
+  // setSize doesn't work for shrinking on transparent windows in Electron 40
+  // Use setBounds which seems to work in both directions
+  const bounds = mainWindow.getBounds();
+  mainWindow.setBounds({ x: bounds.x, y: bounds.y, width: newW, height: newH });
+});
 
 // IPC Handlers - mpv control
 ipcMain.handle('mpv-load', async (_event, url: string) => {

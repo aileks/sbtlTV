@@ -33,6 +33,8 @@ export interface ElectronWindowApi {
   minimize: () => Promise<void>;
   maximize: () => Promise<void>;
   close: () => Promise<void>;
+  getSize: () => Promise<[number, number]>;
+  setSize: (width: number, height: number) => Promise<void>;
 }
 
 export interface StorageResult<T = void> {
