@@ -209,11 +209,13 @@ function App() {
             <p>{syncing ? 'Loading channels...' : 'Select a stream to begin'}</p>
           </div>
         )}
+        {/* TODO: Revisit "Now playing" indicator - either remove or redesign to fit UI
         {currentStream && (
           <div className="now-playing">
             <p>Now playing: {currentStream}</p>
           </div>
         )}
+        */}
       </div>
 
       {/* Error display */}
