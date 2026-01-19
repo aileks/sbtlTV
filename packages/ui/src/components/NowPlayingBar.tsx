@@ -73,35 +73,43 @@ export function NowPlayingBar({
     <div className={`now-playing-bar ${visible ? 'visible' : 'hidden'}`}>
       {channel ? (
         <>
-          {/* Row 1: Channel info */}
+          {/* Row 1: Channel info with description */}
           <div className="npb-row npb-info-row">
-            {channel.stream_icon && (
-              <img
-                src={channel.stream_icon}
-                alt=""
-                className="npb-channel-logo"
-                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-              />
-            )}
-            <div className="npb-text-info">
-              <span className="npb-channel-name" title={channel.name}>
-                {channel.name}
-              </span>
-              {currentProgram ? (
-                <>
+            {/* Left: Logo + Channel/Program */}
+            <div className="npb-channel-section">
+              {channel.stream_icon && (
+                <img
+                  src={channel.stream_icon}
+                  alt=""
+                  className="npb-channel-logo"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              )}
+              <div className="npb-channel-text">
+                <span className="npb-channel-name" title={channel.name}>
+                  {channel.name}
+                </span>
+                {currentProgram ? (
                   <span className="npb-program-title" title={currentProgram.title}>
                     {currentProgram.title}
                   </span>
-                  {currentProgram.description && (
-                    <span className="npb-program-desc" title={currentProgram.description}>
-                      {currentProgram.description}
-                    </span>
-                  )}
-                </>
-              ) : (
-                <span className="npb-no-program">No program info available</span>
-              )}
+                ) : (
+                  <span className="npb-no-program">No program info</span>
+                )}
+              </div>
             </div>
+
+            {/* Divider + Description (only if we have a description) */}
+            {currentProgram?.description && (
+              <>
+                <div className="npb-divider" />
+                <div className="npb-description-section">
+                  <span className="npb-program-desc" title={currentProgram.description}>
+                    {currentProgram.description}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Row 2: Progress and controls */}
