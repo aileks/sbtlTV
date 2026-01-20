@@ -21,18 +21,15 @@ import {
   useSeriesByGenre,
   useMovieGenres,
   useTvGenres,
-  useRecentMovies,
-  useRecentSeries,
 } from '../../hooks/useTmdbLists';
+import { useRecentMovies, useRecentSeries } from '../../hooks/useVod';
 import './VodHome.css';
 
 // TMDB genre IDs
 const GENRE_ACTION = 28;
 const GENRE_COMEDY = 35;
-const GENRE_DRAMA = 18;
 const GENRE_ACTION_TV = 10759; // Action & Adventure for TV
 const GENRE_COMEDY_TV = 35;
-const GENRE_DRAMA_TV = 18;
 
 export interface VodHomeProps {
   type: 'movies' | 'series';
