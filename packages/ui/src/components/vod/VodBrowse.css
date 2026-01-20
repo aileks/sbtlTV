@@ -55,20 +55,29 @@
 .vod-browse__grid {
   flex: 1;
   min-height: 0; /* Allow flex shrink */
+  /* Margin shrinks what Virtuoso measures - ensures column count matches */
+  margin-left: 75px;
+  margin-right: 48px;
 }
 
 .vod-browse__grid-list {
+  /* Virtuoso uses absolute positioning - flexbox is for fallback only */
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  padding: 24px 48px 24px 75px;
+  padding: 24px 0;
 }
 
 .vod-browse__grid-item {
-  /* VirtuosoGrid positions items - just set dimensions */
-  width: 160px;
+  /* Fixed dimensions - Virtuoso MUST know exact size */
+  width: 176px;
+  height: 312px;
   padding: 8px;
   box-sizing: border-box;
+  margin: 0 !important;
+}
+
+.vod-browse__grid-item * {
+  margin: 0;
 }
 
 /* Loading indicator */
@@ -128,29 +137,32 @@
   font-size: 0.9rem;
 }
 
-/* Responsive item sizes */
+/* Responsive item sizes - width AND height must be fixed for Virtuoso */
 @media (min-width: 1200px) {
   .vod-browse__grid-item {
-    width: 180px;
+    width: 196px; /* 180px card + 16px spacing */
+    height: 342px; /* 270px poster + 56px info + 16px padding */
   }
 }
 
 @media (min-width: 1600px) {
   .vod-browse__grid-item {
-    width: 200px;
+    width: 216px; /* 200px card + 16px spacing */
+    height: 372px; /* 300px poster + 56px info + 16px padding */
   }
 }
 
 @media (max-width: 768px) {
   .vod-browse__grid-list {
-    gap: 12px;
+    /* NO gap - use padding on items */
     padding-top: 16px;
     padding-bottom: 16px;
   }
 
   .vod-browse__grid-item {
-    width: 130px;
-    padding: 4px;
+    width: 142px; /* 130px card + 12px spacing */
+    height: 263px; /* 195px poster + 56px info + 12px padding */
+    padding: 6px;
   }
 
   .vod-browse__header {

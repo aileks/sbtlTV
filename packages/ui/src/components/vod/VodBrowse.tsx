@@ -5,7 +5,7 @@
  * and alphabet quick-nav rail.
  */
 
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, forwardRef } from 'react';
 import { VirtuosoGrid, VirtuosoGridHandle } from 'react-virtuoso';
 import { MediaCard } from './MediaCard';
 import { AlphabetRail } from './AlphabetRail';
@@ -17,6 +17,30 @@ import {
   useCurrentLetter,
 } from '../../hooks/useVod';
 import './VodBrowse.css';
+
+// Footer component - defined OUTSIDE to prevent remounting on scroll
+// Must be stable reference for Virtuoso
+const GridFooter = ({ context }: { context?: { loading: boolean } }) => {
+  if (!context?.loading) return null;
+  return (
+    <div className="vod-browse__loading">
+      <div className="vod-browse__spinner" />
+      <span>Loading more...</span>
+    </div>
+  );
+};
+
+// Custom Scroller - force scrollbar always visible to prevent width recalculation
+// See: https://github.com/petyosi/react-virtuoso/issues/1086
+const GridScroller = forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  (props, ref) => (
+    <div
+      ref={ref}
+      {...props}
+      style={{ ...props.style, overflowY: 'scroll' }}
+    />
+  )
+);
 
 export interface VodBrowseProps {
   type: 'movies' | 'series';
@@ -75,10 +99,20 @@ export function VodBrowse({
     }
   }, [hasMore, loading, loadMore]);
 
-  // Grid item renderer
+  // Stable key for each item - receives item from data prop
+  const computeItemKey = useCallback(
+    (index: number, item: StoredMovie | StoredSeries) => {
+      if (!item) return index;
+      return type === 'movies'
+        ? `movie-${(item as StoredMovie).stream_id}`
+        : `series-${(item as StoredSeries).series_id}`;
+    },
+    [type]
+  );
+
+  // Grid item renderer - receives item from data prop, no items dependency
   const ItemContent = useCallback(
-    (index: number) => {
-      const item = items[index];
+    (_index: number, item: StoredMovie | StoredSeries) => {
       if (!item) return null;
 
       return (
@@ -90,19 +124,8 @@ export function VodBrowse({
         />
       );
     },
-    [items, type, onItemClick]
+    [type, onItemClick]
   );
-
-  // Loading footer
-  const Footer = useCallback(() => {
-    if (!loading) return null;
-    return (
-      <div className="vod-browse__loading">
-        <div className="vod-browse__spinner" />
-        <span>Loading more...</span>
-      </div>
-    );
-  }, [loading]);
 
   // Empty state
   if (!loading && items.length === 0) {
@@ -135,7 +158,9 @@ export function VodBrowse({
       <VirtuosoGrid
         ref={virtuosoRef}
         className="vod-browse__grid"
-        totalCount={items.length}
+        data={items}
+        context={{ loading }}
+        computeItemKey={computeItemKey}
         itemContent={ItemContent}
         rangeChanged={handleRangeChange}
         endReached={handleEndReached}
@@ -143,7 +168,8 @@ export function VodBrowse({
         listClassName="vod-browse__grid-list"
         itemClassName="vod-browse__grid-item"
         components={{
-          Footer,
+          Scroller: GridScroller,
+          Footer: GridFooter,
         }}
       />
 
