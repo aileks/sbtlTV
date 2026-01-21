@@ -118,49 +118,84 @@ async function downloadExport(type: 'movie' | 'tv'): Promise<TmdbExportData> {
     gzippedData = await response.arrayBuffer();
   }
 
-  // Decompress using DecompressionStream (modern browsers)
-  const decompressedStream = new Response(
-    new Response(gzippedData).body!.pipeThrough(new DecompressionStream('gzip'))
-  );
-  const text = await decompressedStream.text();
-
-  // Parse line-delimited JSON
+  // Decompress and parse using streaming (avoids ~200MB memory spike)
   const entries = new Map<string, TmdbExportEntry[]>();
   const byId = new Map<number, TmdbExportEntry>();
-  const lines = text.trim().split('\n');
 
-  console.log(`[TMDB Export] Parsing ${lines.length} entries...`);
+  // Create streaming pipeline: gzip → text decoder
+  const decompressedStream = new Response(gzippedData).body!
+    .pipeThrough(new DecompressionStream('gzip'))
+    .pipeThrough(new TextDecoderStream());
 
-  for (const line of lines) {
-    if (!line.trim()) continue;
+  const reader = decompressedStream.getReader();
+  let buffer = '';
+  let lineCount = 0;
 
-    try {
-      const entry = JSON.parse(line) as TmdbExportEntry;
+  console.log(`[TMDB Export] Parsing ${type} entries (streaming)...`);
 
-      // Skip adult content
-      if (entry.adult) continue;
+  // Process chunks as they arrive
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
 
-      // Get the title based on type
-      const title = type === 'movie' ? entry.original_title : entry.original_name;
-      if (!title) continue;
+    buffer += value;
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || ''; // Keep incomplete line for next chunk
 
-      // Normalize and index
-      const normalized = normalizeTitle(title);
-      if (!normalized) continue;
+    for (const line of lines) {
+      if (!line.trim()) continue;
 
-      // Add to title index
-      const existing = entries.get(normalized) || [];
-      existing.push(entry);
-      entries.set(normalized, existing);
+      try {
+        const entry = JSON.parse(line) as TmdbExportEntry;
 
-      // Add to ID index
-      byId.set(entry.id, entry);
-    } catch {
-      // Skip malformed lines
+        // Skip adult content
+        if (entry.adult) continue;
+
+        // Get the title based on type
+        const title = type === 'movie' ? entry.original_title : entry.original_name;
+        if (!title) continue;
+
+        // Normalize and index
+        const normalized = normalizeTitle(title);
+        if (!normalized) continue;
+
+        // Add to title index
+        const existing = entries.get(normalized) || [];
+        existing.push(entry);
+        entries.set(normalized, existing);
+
+        // Add to ID index
+        byId.set(entry.id, entry);
+        lineCount++;
+      } catch {
+        // Skip malformed lines
+      }
     }
   }
 
-  console.log(`[TMDB Export] Indexed ${entries.size} unique titles, ${byId.size} total entries`);
+  // Process any remaining content in buffer
+  if (buffer.trim()) {
+    try {
+      const entry = JSON.parse(buffer) as TmdbExportEntry;
+      if (!entry.adult) {
+        const title = type === 'movie' ? entry.original_title : entry.original_name;
+        if (title) {
+          const normalized = normalizeTitle(title);
+          if (normalized) {
+            const existing = entries.get(normalized) || [];
+            existing.push(entry);
+            entries.set(normalized, existing);
+            byId.set(entry.id, entry);
+            lineCount++;
+          }
+        }
+      }
+    } catch {
+      // Skip malformed final line
+    }
+  }
+
+  console.log(`[TMDB Export] Indexed ${entries.size} unique titles, ${byId.size} total entries (${lineCount} lines)`);
 
   return {
     entries,
@@ -239,40 +274,6 @@ export function findBestMatch(
   }
 
   return null;
-}
-
-/**
- * Calculate string similarity (0-1)
- */
-function calculateSimilarity(a: string, b: string): number {
-  if (a === b) return 1;
-
-  const maxLen = Math.max(a.length, b.length);
-  if (maxLen === 0) return 1;
-
-  // Simple Levenshtein distance
-  const matrix: number[][] = [];
-  for (let i = 0; i <= b.length; i++) {
-    matrix[i] = [i];
-  }
-  for (let j = 0; j <= a.length; j++) {
-    matrix[0][j] = j;
-  }
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      if (b[i - 1] === a[j - 1]) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j] + 1
-        );
-      }
-    }
-  }
-
-  return 1 - matrix[b.length][a.length] / maxLen;
 }
 
 /**

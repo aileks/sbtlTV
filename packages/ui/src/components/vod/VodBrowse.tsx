@@ -18,6 +18,18 @@ import {
 } from '../../hooks/useVod';
 import './VodBrowse.css';
 
+// Debounce hook - delays value updates to avoid expensive operations on every keystroke
+function useDebouncedValue<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
 // Footer component - defined OUTSIDE to prevent remounting on scroll
 // Must be stable reference for Virtuoso
 const GridFooter = ({ context }: { context?: { loading: boolean } }) => {
@@ -60,6 +72,9 @@ export function VodBrowse({
   const virtuosoRef = useRef<VirtuosoGridHandle>(null);
   const [visibleRange, setVisibleRange] = useState({ startIndex: 0, endIndex: 0 });
 
+  // Debounce search to avoid expensive filtering on every keystroke
+  const debouncedSearch = useDebouncedValue(search, 300);
+
   // Scroll to top when category changes
   useEffect(() => {
     if (virtuosoRef.current) {
@@ -67,9 +82,9 @@ export function VodBrowse({
     }
   }, [categoryId]);
 
-  // Get paginated data
-  const moviesData = usePaginatedMovies(type === 'movies' ? categoryId : null, search);
-  const seriesData = usePaginatedSeries(type === 'series' ? categoryId : null, search);
+  // Get paginated data (using debounced search)
+  const moviesData = usePaginatedMovies(type === 'movies' ? categoryId : null, debouncedSearch);
+  const seriesData = usePaginatedSeries(type === 'series' ? categoryId : null, debouncedSearch);
 
   const { items, loading, hasMore, loadMore } = type === 'movies' ? moviesData : seriesData;
 

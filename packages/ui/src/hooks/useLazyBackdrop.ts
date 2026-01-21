@@ -9,7 +9,7 @@
  * Caches result to DB so we don't refetch.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { db, type StoredMovie, type StoredSeries } from '../db';
 import {
   getMovieDetails,
@@ -41,7 +41,8 @@ export function useLazyBackdrop(
   size: keyof typeof TMDB_BACKDROP_SIZES = 'large'
 ): string | null {
   const [backdropUrl, setBackdropUrl] = useState<string | null>(null);
-  const [fetching, setFetching] = useState(false);
+  // useRef instead of useState - synchronously mutable, no stale closure issues
+  const fetchingRef = useRef(false);
 
   useEffect(() => {
     if (!item) {
@@ -61,17 +62,21 @@ export function useLazyBackdrop(
       return;
     }
 
-    // Don't double-fetch
-    if (fetching) return;
+    // Don't double-fetch - ref is synchronously checked, no race condition
+    if (fetchingRef.current) return;
+
+    // Track if this effect instance is still active (for cleanup)
+    let cancelled = false;
 
     // Fetch backdrop from TMDB
     const fetchBackdrop = async () => {
-      setFetching(true);
+      fetchingRef.current = true;
       try {
         let backdropPath: string | null = null;
 
         if (isMovie(item)) {
           const details = await getMovieDetails(apiKey, item.tmdb_id!);
+          if (cancelled) return;
           backdropPath = details.backdrop_path;
 
           // Cache to DB
@@ -82,6 +87,7 @@ export function useLazyBackdrop(
           }
         } else {
           const details = await getTvShowDetails(apiKey, item.tmdb_id!);
+          if (cancelled) return;
           backdropPath = details.backdrop_path;
 
           // Cache to DB
@@ -92,18 +98,26 @@ export function useLazyBackdrop(
           }
         }
 
-        if (backdropPath) {
+        if (!cancelled && backdropPath) {
           setBackdropUrl(getTmdbImageUrl(backdropPath, TMDB_BACKDROP_SIZES[size]));
         }
       } catch (err) {
-        console.warn('Failed to fetch TMDB backdrop:', err);
+        if (!cancelled) {
+          console.warn('Failed to fetch TMDB backdrop:', err);
+        }
         // Silently fail - fallback to cover image
       } finally {
-        setFetching(false);
+        fetchingRef.current = false;
       }
     };
 
     fetchBackdrop();
+
+    // Cleanup: mark as cancelled and reset fetching flag so next effect can fetch
+    return () => {
+      cancelled = true;
+      fetchingRef.current = false;
+    };
   }, [item?.tmdb_id, item?.backdrop_path, apiKey, size]);
 
   return backdropUrl;

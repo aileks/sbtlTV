@@ -514,7 +514,23 @@ ipcMain.handle('storage-is-encryption-available', async () => {
   return { success: true, data: storage.isEncryptionAvailable() };
 });
 
+// URL allowlist for fetch-binary (TMDB exports only) - prevents SSRF attacks
+// Note: fetch-proxy is unrestricted because it's used for user-configured IPTV providers
+const ALLOWED_BINARY_FETCH_DOMAINS = [
+  'files.tmdb.org',       // TMDB daily exports (gzipped)
+];
+
+function isAllowedBinaryUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return ALLOWED_BINARY_FETCH_DOMAINS.some(domain => parsed.hostname === domain || parsed.hostname.endsWith('.' + domain));
+  } catch {
+    return false;
+  }
+}
+
 // Fetch proxy - bypasses CORS by making requests from main process
+// Used for IPTV provider API calls (user-configured URLs) - not restricted
 ipcMain.handle('fetch-proxy', async (_event, url: string, options?: { method?: string; headers?: Record<string, string>; body?: string }) => {
   try {
     const response = await electronNet.fetch(url, {
@@ -541,7 +557,11 @@ ipcMain.handle('fetch-proxy', async (_event, url: string, options?: { method?: s
 });
 
 // Fetch binary - for gzipped/binary content, returns base64
+// Restricted to TMDB exports only (prevents SSRF with binary data)
 ipcMain.handle('fetch-binary', async (_event, url: string) => {
+  if (!isAllowedBinaryUrl(url)) {
+    return { success: false, error: `Domain not allowed for binary fetch: ${new URL(url).hostname}` };
+  }
   try {
     const response = await electronNet.fetch(url);
     if (!response.ok) {

@@ -9,7 +9,7 @@
  * Caches result to DB so we don't refetch.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { db, type StoredMovie, type StoredSeries } from '../db';
 import { getMovieDetails, getTvShowDetails } from '../services/tmdb';
 
@@ -34,7 +34,8 @@ export function useLazyPlot(
   apiKey: string | null | undefined
 ): string | null {
   const [plot, setPlot] = useState<string | null>(null);
-  const [fetching, setFetching] = useState(false);
+  // useRef instead of useState - synchronously mutable, no stale closure issues
+  const fetchingRef = useRef(false);
 
   useEffect(() => {
     if (!item) {
@@ -54,17 +55,21 @@ export function useLazyPlot(
       return;
     }
 
-    // Don't double-fetch
-    if (fetching) return;
+    // Don't double-fetch - ref is synchronously checked, no race condition
+    if (fetchingRef.current) return;
+
+    // Track if this effect instance is still active (for cleanup)
+    let cancelled = false;
 
     // Fetch plot from TMDB
     const fetchPlot = async () => {
-      setFetching(true);
+      fetchingRef.current = true;
       try {
         let overview: string | null = null;
 
         if (isMovie(item)) {
           const details = await getMovieDetails(apiKey, item.tmdb_id!);
+          if (cancelled) return;
           overview = details.overview || null;
 
           // Cache to DB
@@ -75,6 +80,7 @@ export function useLazyPlot(
           }
         } else {
           const details = await getTvShowDetails(apiKey, item.tmdb_id!);
+          if (cancelled) return;
           overview = details.overview || null;
 
           // Cache to DB
@@ -85,19 +91,27 @@ export function useLazyPlot(
           }
         }
 
-        if (overview) {
+        if (!cancelled && overview) {
           setPlot(overview);
         }
       } catch (err) {
-        console.warn('Failed to fetch TMDB plot:', err);
+        if (!cancelled) {
+          console.warn('Failed to fetch TMDB plot:', err);
+        }
         // Silently fail - no plot to show
       } finally {
-        setFetching(false);
+        fetchingRef.current = false;
       }
     };
 
     fetchPlot();
-  }, [item?.tmdb_id, item?.plot, apiKey, fetching]);
+
+    // Cleanup: mark as cancelled and reset fetching flag so next effect can fetch
+    return () => {
+      cancelled = true;
+      fetchingRef.current = false;
+    };
+  }, [item?.tmdb_id, item?.plot, apiKey]);
 
   return plot;
 }
