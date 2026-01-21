@@ -21,8 +21,9 @@ export interface VodSyncResult {
   error?: string;
 }
 
-// EPG freshness threshold (6 hours)
-const EPG_STALE_MS = 6 * 60 * 60 * 1000;
+// Default freshness thresholds (can be overridden by user settings)
+const DEFAULT_EPG_STALE_HOURS = 6;
+const DEFAULT_VOD_STALE_HOURS = 24;
 
 // Sync EPG for all channels from a source using XMLTV
 async function syncEpgForSource(source: Source, channels: Channel[]): Promise<number> {
@@ -85,10 +86,29 @@ async function syncEpgForSource(source: Source, channels: Channel[]): Promise<nu
 }
 
 // Check if EPG needs refresh
-export async function isEpgStale(sourceId: string): Promise<boolean> {
+// refreshHours: 0 = manual only (never auto-stale), default 6 hours
+export async function isEpgStale(sourceId: string, refreshHours: number = DEFAULT_EPG_STALE_HOURS): Promise<boolean> {
+  // 0 means manual-only, never consider stale for auto-refresh
+  if (refreshHours === 0) return false;
+
   const meta = await db.sourcesMeta.get(sourceId);
   if (!meta?.last_synced) return true;
-  return Date.now() - meta.last_synced.getTime() > EPG_STALE_MS;
+
+  const staleMs = refreshHours * 60 * 60 * 1000;
+  return Date.now() - meta.last_synced.getTime() > staleMs;
+}
+
+// Check if VOD needs refresh
+// refreshHours: 0 = manual only (never auto-stale), default 24 hours
+export async function isVodStale(sourceId: string, refreshHours: number = DEFAULT_VOD_STALE_HOURS): Promise<boolean> {
+  // 0 means manual-only, never consider stale for auto-refresh
+  if (refreshHours === 0) return false;
+
+  const meta = await db.sourcesMeta.get(sourceId);
+  if (!meta?.vod_last_synced) return true;
+
+  const staleMs = refreshHours * 60 * 60 * 1000;
+  return Date.now() - meta.vod_last_synced.getTime() > staleMs;
 }
 
 // Sync a single source - fetches data and stores in Dexie
@@ -236,7 +256,8 @@ export async function getSyncStatus(): Promise<SourceMeta[]> {
 // ===========================================================================
 
 // Sync VOD movies for a single Xtream source
-export async function syncVodMovies(source: Source): Promise<{ count: number; categoryCount: number }> {
+// Uses safe update pattern: fetch new data first, only update if successful
+export async function syncVodMovies(source: Source): Promise<{ count: number; categoryCount: number; skipped?: boolean }> {
   if (source.type !== 'xtream' || !source.username || !source.password) {
     return { count: 0, categoryCount: 0 };
   }
@@ -246,9 +267,23 @@ export async function syncVodMovies(source: Source): Promise<{ count: number; ca
     source.id
   );
 
-  // Fetch categories and movies
-  const categories = await client.getVodCategories();
-  const movies = await client.getVodStreams();
+  // Fetch categories and movies FIRST (before any deletes)
+  let categories;
+  let movies;
+  try {
+    categories = await client.getVodCategories();
+    movies = await client.getVodStreams();
+  } catch (err) {
+    console.warn('[VOD Movies] Fetch failed, keeping existing data:', err);
+    return { count: 0, categoryCount: 0, skipped: true };
+  }
+
+  // Check if fetch returned empty when we have existing data
+  const existingCount = await db.vodMovies.where('source_id').equals(source.id).count();
+  if (movies.length === 0 && existingCount > 0) {
+    console.warn('[VOD Movies] Fetch returned empty but we have existing data, keeping it');
+    return { count: existingCount, categoryCount: 0, skipped: true };
+  }
 
   // Convert categories to VodCategory format
   const vodCategories: VodCategory[] = categories.map(cat => ({
@@ -258,29 +293,46 @@ export async function syncVodMovies(source: Source): Promise<{ count: number; ca
     type: 'movie' as const,
   }));
 
-  // Convert movies to StoredMovie format
-  const storedMovies: StoredMovie[] = movies.map(movie => ({
-    ...movie,
-    added: new Date(),
-  }));
+  // Get existing movies to preserve tmdb_id and other enrichments
+  const existingMovies = await db.vodMovies.where('source_id').equals(source.id).toArray();
+  const existingMap = new Map(existingMovies.map(m => [m.stream_id, m]));
 
-  // Store in batches
+  // Convert movies to StoredMovie format, preserving existing enrichments
+  const storedMovies: StoredMovie[] = movies.map(movie => {
+    const existing = existingMap.get(movie.stream_id);
+    return {
+      ...movie,
+      // Preserve existing enrichments if present
+      tmdb_id: existing?.tmdb_id,
+      imdb_id: existing?.imdb_id,
+      backdrop_path: existing?.backdrop_path,
+      popularity: existing?.popularity,
+      added: existing?.added ?? new Date(),
+    };
+  });
+
+  // Store in batches - use bulkPut to upsert (no delete needed)
   const BATCH_SIZE = 500;
 
   await db.transaction('rw', [db.vodMovies, db.vodCategories], async () => {
-    // Clear existing movies for this source
-    await db.vodMovies.where('source_id').equals(source.id).delete();
+    // Update categories (upsert)
     await db.vodCategories.where('source_id').equals(source.id).filter(c => c.type === 'movie').delete();
-
-    // Store categories
     if (vodCategories.length > 0) {
       await db.vodCategories.bulkPut(vodCategories);
     }
 
-    // Store movies in batches
+    // Upsert movies in batches
     for (let i = 0; i < storedMovies.length; i += BATCH_SIZE) {
       const batch = storedMovies.slice(i, i + BATCH_SIZE);
       await db.vodMovies.bulkPut(batch);
+    }
+
+    // Remove movies that no longer exist in source (optional cleanup)
+    const newIds = new Set(movies.map(m => m.stream_id));
+    const toRemove = existingMovies.filter(m => !newIds.has(m.stream_id)).map(m => m.stream_id);
+    if (toRemove.length > 0) {
+      await db.vodMovies.bulkDelete(toRemove);
+      console.log(`[VOD Movies] Removed ${toRemove.length} movies no longer in source`);
     }
   });
 
@@ -288,7 +340,8 @@ export async function syncVodMovies(source: Source): Promise<{ count: number; ca
 }
 
 // Sync VOD series for a single Xtream source
-export async function syncVodSeries(source: Source): Promise<{ count: number; categoryCount: number }> {
+// Uses safe update pattern: fetch new data first, only update if successful
+export async function syncVodSeries(source: Source): Promise<{ count: number; categoryCount: number; skipped?: boolean }> {
   if (source.type !== 'xtream' || !source.username || !source.password) {
     return { count: 0, categoryCount: 0 };
   }
@@ -298,9 +351,23 @@ export async function syncVodSeries(source: Source): Promise<{ count: number; ca
     source.id
   );
 
-  // Fetch categories and series
-  const categories = await client.getSeriesCategories();
-  const series = await client.getSeries();
+  // Fetch categories and series FIRST (before any deletes)
+  let categories;
+  let series;
+  try {
+    categories = await client.getSeriesCategories();
+    series = await client.getSeries();
+  } catch (err) {
+    console.warn('[VOD Series] Fetch failed, keeping existing data:', err);
+    return { count: 0, categoryCount: 0, skipped: true };
+  }
+
+  // Check if fetch returned empty when we have existing data
+  const existingCount = await db.vodSeries.where('source_id').equals(source.id).count();
+  if (series.length === 0 && existingCount > 0) {
+    console.warn('[VOD Series] Fetch returned empty but we have existing data, keeping it');
+    return { count: existingCount, categoryCount: 0, skipped: true };
+  }
 
   // Convert categories to VodCategory format
   const vodCategories: VodCategory[] = categories.map(cat => ({
@@ -310,29 +377,46 @@ export async function syncVodSeries(source: Source): Promise<{ count: number; ca
     type: 'series' as const,
   }));
 
-  // Convert series to StoredSeries format
-  const storedSeries: StoredSeries[] = series.map(s => ({
-    ...s,
-    added: new Date(),
-  }));
+  // Get existing series to preserve tmdb_id and other enrichments
+  const existingSeries = await db.vodSeries.where('source_id').equals(source.id).toArray();
+  const existingMap = new Map(existingSeries.map(s => [s.series_id, s]));
 
-  // Store in batches
+  // Convert series to StoredSeries format, preserving existing enrichments
+  const storedSeries: StoredSeries[] = series.map(s => {
+    const existing = existingMap.get(s.series_id);
+    return {
+      ...s,
+      // Preserve existing enrichments if present
+      tmdb_id: existing?.tmdb_id,
+      imdb_id: existing?.imdb_id,
+      backdrop_path: existing?.backdrop_path,
+      popularity: existing?.popularity,
+      added: existing?.added ?? new Date(),
+    };
+  });
+
+  // Store in batches - use bulkPut to upsert (no delete needed)
   const BATCH_SIZE = 500;
 
   await db.transaction('rw', [db.vodSeries, db.vodCategories], async () => {
-    // Clear existing series for this source
-    await db.vodSeries.where('source_id').equals(source.id).delete();
+    // Update categories (upsert)
     await db.vodCategories.where('source_id').equals(source.id).filter(c => c.type === 'series').delete();
-
-    // Store categories
     if (vodCategories.length > 0) {
       await db.vodCategories.bulkPut(vodCategories);
     }
 
-    // Store series in batches
+    // Upsert series in batches
     for (let i = 0; i < storedSeries.length; i += BATCH_SIZE) {
       const batch = storedSeries.slice(i, i + BATCH_SIZE);
       await db.vodSeries.bulkPut(batch);
+    }
+
+    // Remove series that no longer exist in source (optional cleanup)
+    const newIds = new Set(series.map(s => s.series_id));
+    const toRemove = existingSeries.filter(s => !newIds.has(s.series_id)).map(s => s.series_id);
+    if (toRemove.length > 0) {
+      await db.vodSeries.bulkDelete(toRemove);
+      console.log(`[VOD Series] Removed ${toRemove.length} series no longer in source`);
     }
   });
 
@@ -377,22 +461,29 @@ export async function syncSeriesEpisodes(source: Source, seriesId: string): Prom
 }
 
 // Match movies against TMDB exports (no API calls!)
+// Only matches items that haven't been attempted yet (incremental)
 async function matchMoviesWithTmdb(sourceId: string): Promise<number> {
   try {
     console.log('[TMDB Match] Starting movie matching...');
     const exports = await getMovieExports();
 
-    // Get all movies without tmdb_id for this source
+    // Get only movies that haven't been matched AND haven't been attempted
     const movies = await db.vodMovies
       .where('source_id')
       .equals(sourceId)
-      .filter(m => !m.tmdb_id)
+      .filter(m => !m.tmdb_id && !m.match_attempted)
       .toArray();
 
-    console.log(`[TMDB Match] Matching ${movies.length} movies...`);
+    if (movies.length === 0) {
+      console.log('[TMDB Match] No new movies to match');
+      return 0;
+    }
+
+    console.log(`[TMDB Match] Matching ${movies.length} new movies...`);
 
     let matched = 0;
     const BATCH_SIZE = 500;
+    const now = new Date();
 
     for (let i = 0; i < movies.length; i += BATCH_SIZE) {
       const batch = movies.slice(i, i + BATCH_SIZE);
@@ -406,9 +497,18 @@ async function matchMoviesWithTmdb(sourceId: string): Promise<number> {
             changes: {
               tmdb_id: match.id,
               popularity: match.popularity,
+              match_attempted: now,
             },
           });
           matched++;
+        } else {
+          // Mark as attempted even if no match found (prevents re-trying)
+          updates.push({
+            key: movie.stream_id,
+            changes: {
+              match_attempted: now,
+            },
+          });
         }
       }
 
@@ -433,22 +533,29 @@ async function matchMoviesWithTmdb(sourceId: string): Promise<number> {
 }
 
 // Match series against TMDB exports (no API calls!)
+// Only matches items that haven't been attempted yet (incremental)
 async function matchSeriesWithTmdb(sourceId: string): Promise<number> {
   try {
     console.log('[TMDB Match] Starting series matching...');
     const exports = await getTvExports();
 
-    // Get all series without tmdb_id for this source
+    // Get only series that haven't been matched AND haven't been attempted
     const series = await db.vodSeries
       .where('source_id')
       .equals(sourceId)
-      .filter(s => !s.tmdb_id)
+      .filter(s => !s.tmdb_id && !s.match_attempted)
       .toArray();
 
-    console.log(`[TMDB Match] Matching ${series.length} series...`);
+    if (series.length === 0) {
+      console.log('[TMDB Match] No new series to match');
+      return 0;
+    }
+
+    console.log(`[TMDB Match] Matching ${series.length} new series...`);
 
     let matched = 0;
     const BATCH_SIZE = 500;
+    const now = new Date();
 
     for (let i = 0; i < series.length; i += BATCH_SIZE) {
       const batch = series.slice(i, i + BATCH_SIZE);
@@ -462,9 +569,18 @@ async function matchSeriesWithTmdb(sourceId: string): Promise<number> {
             changes: {
               tmdb_id: match.id,
               popularity: match.popularity,
+              match_attempted: now,
             },
           });
           matched++;
+        } else {
+          // Mark as attempted even if no match found (prevents re-trying)
+          updates.push({
+            key: s.series_id,
+            changes: {
+              match_attempted: now,
+            },
+          });
         }
       }
 
@@ -496,12 +612,23 @@ export async function syncVodForSource(source: Source): Promise<VodSyncResult> {
       syncVodSeries(source),
     ]);
 
-    // Update source meta with VOD counts
+    // Update source meta with VOD counts and sync timestamp
     const meta = await db.sourcesMeta.get(source.id);
     if (meta) {
       await db.sourcesMeta.update(source.id, {
         vod_movie_count: moviesResult.count,
         vod_series_count: seriesResult.count,
+        vod_last_synced: new Date(),
+      });
+    } else {
+      // Create meta if it doesn't exist (shouldn't happen, but be safe)
+      await db.sourcesMeta.put({
+        source_id: source.id,
+        channel_count: 0,
+        category_count: 0,
+        vod_movie_count: moviesResult.count,
+        vod_series_count: seriesResult.count,
+        vod_last_synced: new Date(),
       });
     }
 

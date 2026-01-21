@@ -324,3 +324,170 @@ export async function validateApiKey(apiKey: string): Promise<boolean> {
     return false;
   }
 }
+
+// ===========================================================================
+// GitHub Cache (fallback for users without API key)
+// ===========================================================================
+
+// URL to the raw cached TMDB data from GitHub
+// TODO: Update this to your actual GitHub repo once published
+const GITHUB_CACHE_URL = 'https://raw.githubusercontent.com/your-username/sbtlTV/main/data/tmdb-cache.json';
+
+// Cache the fetched data in memory
+let cachedTmdbData: TmdbCacheData | null = null;
+let cacheLastFetched: number = 0;
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour in-memory cache
+
+interface TmdbCacheData {
+  generated_at: string;
+  movies: {
+    trending_day?: TmdbMovieResult[];
+    trending_week?: TmdbMovieResult[];
+    popular?: TmdbMovieResult[];
+    top_rated?: TmdbMovieResult[];
+    now_playing?: TmdbMovieResult[];
+    genres?: TmdbGenre[];
+    by_genre?: Record<string, TmdbMovieResult[]>;
+  };
+  tv: {
+    trending_day?: TmdbTvResult[];
+    trending_week?: TmdbTvResult[];
+    popular?: TmdbTvResult[];
+    top_rated?: TmdbTvResult[];
+    genres?: TmdbGenre[];
+  };
+}
+
+/**
+ * Fetch cached TMDB data from GitHub
+ * Returns null if cache is unavailable
+ */
+async function fetchCachedTmdbData(): Promise<TmdbCacheData | null> {
+  // Return in-memory cache if still valid
+  if (cachedTmdbData && Date.now() - cacheLastFetched < CACHE_TTL_MS) {
+    return cachedTmdbData;
+  }
+
+  try {
+    const response = await fetch(GITHUB_CACHE_URL);
+    if (!response.ok) {
+      console.warn('[TMDB Cache] GitHub cache not available:', response.status);
+      return null;
+    }
+    cachedTmdbData = await response.json();
+    cacheLastFetched = Date.now();
+    console.log('[TMDB Cache] Loaded from GitHub, generated:', cachedTmdbData?.generated_at);
+    return cachedTmdbData;
+  } catch (err) {
+    console.warn('[TMDB Cache] Failed to fetch from GitHub:', err);
+    return null;
+  }
+}
+
+/**
+ * Get trending movies with cache fallback
+ * Tries GitHub cache first if no API key, falls back to direct API
+ */
+export async function getTrendingMoviesWithCache(
+  apiKey?: string,
+  timeWindow: 'day' | 'week' = 'week'
+): Promise<TmdbMovieResult[]> {
+  // Try cache first if no API key
+  if (!apiKey) {
+    const cache = await fetchCachedTmdbData();
+    const cacheKey = timeWindow === 'day' ? 'trending_day' : 'trending_week';
+    if (cache?.movies[cacheKey]) {
+      return cache.movies[cacheKey]!;
+    }
+    return [];
+  }
+  return getTrendingMovies(apiKey, timeWindow);
+}
+
+/**
+ * Get popular movies with cache fallback
+ */
+export async function getPopularMoviesWithCache(apiKey?: string): Promise<TmdbMovieResult[]> {
+  if (!apiKey) {
+    const cache = await fetchCachedTmdbData();
+    if (cache?.movies.popular) {
+      return cache.movies.popular;
+    }
+    return [];
+  }
+  return getPopularMovies(apiKey);
+}
+
+/**
+ * Get top rated movies with cache fallback
+ */
+export async function getTopRatedMoviesWithCache(apiKey?: string): Promise<TmdbMovieResult[]> {
+  if (!apiKey) {
+    const cache = await fetchCachedTmdbData();
+    if (cache?.movies.top_rated) {
+      return cache.movies.top_rated;
+    }
+    return [];
+  }
+  return getTopRatedMovies(apiKey);
+}
+
+/**
+ * Get trending TV with cache fallback
+ */
+export async function getTrendingTvShowsWithCache(
+  apiKey?: string,
+  timeWindow: 'day' | 'week' = 'week'
+): Promise<TmdbTvResult[]> {
+  if (!apiKey) {
+    const cache = await fetchCachedTmdbData();
+    const cacheKey = timeWindow === 'day' ? 'trending_day' : 'trending_week';
+    if (cache?.tv[cacheKey]) {
+      return cache.tv[cacheKey]!;
+    }
+    return [];
+  }
+  return getTrendingTvShows(apiKey, timeWindow);
+}
+
+/**
+ * Get popular TV with cache fallback
+ */
+export async function getPopularTvShowsWithCache(apiKey?: string): Promise<TmdbTvResult[]> {
+  if (!apiKey) {
+    const cache = await fetchCachedTmdbData();
+    if (cache?.tv.popular) {
+      return cache.tv.popular;
+    }
+    return [];
+  }
+  return getPopularTvShows(apiKey);
+}
+
+/**
+ * Get movie genres with cache fallback
+ */
+export async function getMovieGenresWithCache(apiKey?: string): Promise<TmdbGenre[]> {
+  if (!apiKey) {
+    const cache = await fetchCachedTmdbData();
+    if (cache?.movies.genres) {
+      return cache.movies.genres;
+    }
+    return [];
+  }
+  return getMovieGenres(apiKey);
+}
+
+/**
+ * Get TV genres with cache fallback
+ */
+export async function getTvGenresWithCache(apiKey?: string): Promise<TmdbGenre[]> {
+  if (!apiKey) {
+    const cache = await fetchCachedTmdbData();
+    if (cache?.tv.genres) {
+      return cache.tv.genres;
+    }
+    return [];
+  }
+  return getTvGenres(apiKey);
+}

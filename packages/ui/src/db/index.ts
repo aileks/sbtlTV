@@ -17,6 +17,7 @@ export interface SourceMeta {
   source_id: string;
   epg_url?: string;
   last_synced?: Date;
+  vod_last_synced?: Date;
   channel_count: number;
   category_count: number;
   vod_movie_count?: number;
@@ -31,6 +32,7 @@ export interface StoredMovie extends Movie {
   added?: Date;
   backdrop_path?: string;
   popularity?: number;
+  match_attempted?: Date; // When TMDB matching was last attempted (even if no match found)
 }
 
 // VOD Series with TMDB enrichment
@@ -40,6 +42,7 @@ export interface StoredSeries extends Series {
   added?: Date;
   backdrop_path?: string;
   popularity?: number;
+  match_attempted?: Date; // When TMDB matching was last attempted (even if no match found)
 }
 
 // VOD Episode

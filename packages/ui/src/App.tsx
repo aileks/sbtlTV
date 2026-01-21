@@ -8,7 +8,7 @@ import { ChannelPanel } from './components/ChannelPanel';
 import { MoviesPage } from './components/MoviesPage';
 import { SeriesPage } from './components/SeriesPage';
 import { useSelectedCategory } from './hooks/useChannels';
-import { syncAllSources, syncAllVod } from './db/sync';
+import { syncAllSources, syncAllVod, syncVodForSource, isVodStale } from './db/sync';
 import type { StoredChannel } from './db';
 
 function App() {
@@ -176,10 +176,21 @@ function App() {
       if (result.data && result.data.length > 0) {
         setSyncing(true);
         await syncAllSources();
-        // Also sync VOD for Xtream sources
-        const hasXtream = result.data.some(s => s.type === 'xtream' && s.enabled);
-        if (hasXtream) {
-          await syncAllVod();
+
+        // Get user's configured refresh settings
+        const settingsResult = await window.storage.getSettings();
+        const vodRefreshHours = settingsResult.data?.vodRefreshHours ?? 24;
+
+        // Sync VOD only for Xtream sources that are stale
+        const xtreamSources = result.data.filter(s => s.type === 'xtream' && s.enabled);
+        for (const source of xtreamSources) {
+          const stale = await isVodStale(source.id, vodRefreshHours);
+          if (stale) {
+            console.log(`[VOD] Source ${source.name} is stale, syncing...`);
+            await syncVodForSource(source);
+          } else {
+            console.log(`[VOD] Source ${source.name} is fresh, skipping sync`);
+          }
         }
         setSyncing(false);
       }

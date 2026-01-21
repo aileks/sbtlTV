@@ -25,6 +25,8 @@ interface AppSettings {
   theme: 'dark' | 'light';
   lastSourceId?: string;
   tmdbApiKey?: string;  // Decrypted value returned to callers
+  vodRefreshHours: number;  // 0 = manual only, default 24
+  epgRefreshHours: number;  // 0 = manual only, default 6
 }
 
 // Internal storage format (encrypted)
@@ -32,6 +34,8 @@ interface StoredSettings {
   theme: 'dark' | 'light';
   lastSourceId?: string;
   encryptedTmdbApiKey?: string;  // Base64 encoded encrypted buffer
+  vodRefreshHours: number;
+  epgRefreshHours: number;
 }
 
 const store = new Store<StoreSchema>({
@@ -40,6 +44,8 @@ const store = new Store<StoreSchema>({
     sources: [],
     settings: {
       theme: 'dark',
+      vodRefreshHours: 24,  // Default: refresh VOD every 24 hours
+      epgRefreshHours: 6,   // Default: refresh EPG every 6 hours
     },
   },
 });
@@ -151,6 +157,8 @@ export function getSettings(): AppSettings {
   const result: AppSettings = {
     theme: stored.theme,
     lastSourceId: stored.lastSourceId,
+    vodRefreshHours: stored.vodRefreshHours ?? 24,
+    epgRefreshHours: stored.epgRefreshHours ?? 6,
   };
   if (stored.encryptedTmdbApiKey) {
     result.tmdbApiKey = decryptPassword(stored.encryptedTmdbApiKey);
@@ -170,6 +178,8 @@ export function updateSettings(settings: Partial<AppSettings>): void {
   if (settings.tmdbApiKey !== undefined) {
     updated.encryptedTmdbApiKey = settings.tmdbApiKey ? encryptPassword(settings.tmdbApiKey) : undefined;
   }
+  if (settings.vodRefreshHours !== undefined) updated.vodRefreshHours = settings.vodRefreshHours;
+  if (settings.epgRefreshHours !== undefined) updated.epgRefreshHours = settings.epgRefreshHours;
 
   store.set('settings', updated);
 }

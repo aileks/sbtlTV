@@ -47,6 +47,8 @@ export interface AppSettings {
   theme: 'dark' | 'light';
   lastSourceId?: string;
   tmdbApiKey?: string;
+  vodRefreshHours?: number;  // 0 = manual only, default 24
+  epgRefreshHours?: number;  // 0 = manual only, default 6
 }
 
 export interface Source {

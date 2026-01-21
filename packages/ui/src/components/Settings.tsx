@@ -45,11 +45,15 @@ export function Settings({ onClose }: SettingsProps) {
   const [vodSyncing, setVodSyncing] = useState(false);
   const [vodSyncResults, setVodSyncResults] = useState<Map<string, VodSyncResult> | null>(null);
 
+  // Refresh settings state
+  const [vodRefreshHours, setVodRefreshHours] = useState(24);
+  const [epgRefreshHours, setEpgRefreshHours] = useState(6);
+
   // Load sources and check encryption on mount
   useEffect(() => {
     loadSources();
     checkEncryption();
-    loadTmdbApiKey();
+    loadSettings();
   }, []);
 
   async function loadSources() {
@@ -68,16 +72,30 @@ export function Settings({ onClose }: SettingsProps) {
     }
   }
 
-  async function loadTmdbApiKey() {
+  async function loadSettings() {
     if (!window.storage) return;
     const result = await window.storage.getSettings();
-    if (result.data && 'tmdbApiKey' in result.data) {
+    if (result.data) {
+      // Load TMDB API key
       const key = (result.data as { tmdbApiKey?: string }).tmdbApiKey || '';
       setTmdbApiKey(key);
       if (key) {
         setTmdbKeyValid(true); // Assume valid if previously saved
       }
+      // Load refresh settings
+      const settings = result.data as { vodRefreshHours?: number; epgRefreshHours?: number };
+      if (settings.vodRefreshHours !== undefined) {
+        setVodRefreshHours(settings.vodRefreshHours);
+      }
+      if (settings.epgRefreshHours !== undefined) {
+        setEpgRefreshHours(settings.epgRefreshHours);
+      }
     }
+  }
+
+  async function saveRefreshSettings(vod: number, epg: number) {
+    if (!window.storage) return;
+    await window.storage.updateSettings({ vodRefreshHours: vod, epgRefreshHours: epg });
   }
 
   async function saveTmdbApiKey() {
@@ -347,6 +365,56 @@ export function Settings({ onClose }: SettingsProps) {
               })}
             </div>
           )}
+        </div>
+
+        {/* Data Refresh Settings */}
+        <div className="settings-section">
+          <div className="section-header">
+            <h3>Data Refresh</h3>
+          </div>
+          <p className="section-description">
+            Configure how often data is automatically refreshed on app startup.
+            Set to "Manual only" to disable automatic refresh.
+          </p>
+
+          <div className="refresh-settings">
+            <div className="form-group inline">
+              <label>VOD (Movies & Series)</label>
+              <select
+                value={vodRefreshHours}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value);
+                  setVodRefreshHours(val);
+                  saveRefreshSettings(val, epgRefreshHours);
+                }}
+              >
+                <option value={0}>Manual only</option>
+                <option value={6}>Every 6 hours</option>
+                <option value={12}>Every 12 hours</option>
+                <option value={24}>Every 24 hours</option>
+                <option value={48}>Every 2 days</option>
+                <option value={168}>Every week</option>
+              </select>
+            </div>
+
+            <div className="form-group inline">
+              <label>EPG (TV Guide)</label>
+              <select
+                value={epgRefreshHours}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value);
+                  setEpgRefreshHours(val);
+                  saveRefreshSettings(vodRefreshHours, val);
+                }}
+              >
+                <option value={0}>Manual only</option>
+                <option value={3}>Every 3 hours</option>
+                <option value={6}>Every 6 hours</option>
+                <option value={12}>Every 12 hours</option>
+                <option value={24}>Every 24 hours</option>
+              </select>
+            </div>
+          </div>
         </div>
 
         {/* Add/Edit Form */}
