@@ -3,6 +3,9 @@
  *
  * Wrapper around tmdb-ts for fetching movie/series metadata,
  * trending lists, and search functionality.
+ *
+ * Uses "accessToken" (TMDB API Read Access Token) for authentication,
+ * with GitHub-cached fallback for users without their own token.
  */
 
 import { TMDB } from 'tmdb-ts';
@@ -33,15 +36,15 @@ export function getTmdbImageUrl(
 
 // Singleton instance
 let tmdbInstance: TMDB | null = null;
-let currentApiKey: string | null = null;
+let currentAccessToken: string | null = null;
 
 /**
  * Initialize or get TMDB client
  */
-export function getTmdb(apiKey: string): TMDB {
-  if (!tmdbInstance || currentApiKey !== apiKey) {
-    tmdbInstance = new TMDB(apiKey);
-    currentApiKey = apiKey;
+export function getTmdb(accessToken: string): TMDB {
+  if (!tmdbInstance || currentAccessToken !== accessToken) {
+    tmdbInstance = new TMDB(accessToken);
+    currentAccessToken = accessToken;
   }
   return tmdbInstance;
 }
@@ -50,7 +53,7 @@ export function getTmdb(apiKey: string): TMDB {
  * Check if TMDB is configured
  */
 export function isTmdbConfigured(): boolean {
-  return tmdbInstance !== null && currentApiKey !== null;
+  return tmdbInstance !== null && currentAccessToken !== null;
 }
 
 /**
@@ -58,11 +61,11 @@ export function isTmdbConfigured(): boolean {
  */
 export function clearTmdb(): void {
   tmdbInstance = null;
-  currentApiKey = null;
+  currentAccessToken = null;
 }
 
 // ===========================================================================
-// Movie endpoints
+// Type definitions
 // ===========================================================================
 
 export interface TmdbMovieResult {
@@ -90,71 +93,6 @@ export interface TmdbMovieDetails extends TmdbMovieResult {
   revenue: number;
 }
 
-/**
- * Get trending movies
- */
-export async function getTrendingMovies(
-  apiKey: string,
-  timeWindow: 'day' | 'week' = 'week'
-): Promise<TmdbMovieResult[]> {
-  const tmdb = getTmdb(apiKey);
-  const response = await tmdb.trending.trending('movie', timeWindow);
-  return response.results as unknown as TmdbMovieResult[];
-}
-
-/**
- * Get popular movies
- */
-export async function getPopularMovies(
-  apiKey: string,
-  page = 1
-): Promise<TmdbMovieResult[]> {
-  const tmdb = getTmdb(apiKey);
-  const response = await tmdb.movies.popular({ page });
-  return response.results as TmdbMovieResult[];
-}
-
-/**
- * Get top rated movies
- */
-export async function getTopRatedMovies(
-  apiKey: string,
-  page = 1
-): Promise<TmdbMovieResult[]> {
-  const tmdb = getTmdb(apiKey);
-  const response = await tmdb.movies.topRated({ page });
-  return response.results as TmdbMovieResult[];
-}
-
-/**
- * Search movies
- */
-export async function searchMovies(
-  apiKey: string,
-  query: string,
-  year?: number
-): Promise<TmdbMovieResult[]> {
-  const tmdb = getTmdb(apiKey);
-  const response = await tmdb.search.movies({ query, year });
-  return response.results as TmdbMovieResult[];
-}
-
-/**
- * Get movie details
- */
-export async function getMovieDetails(
-  apiKey: string,
-  movieId: number
-): Promise<TmdbMovieDetails> {
-  const tmdb = getTmdb(apiKey);
-  const details = await tmdb.movies.details(movieId);
-  return details as unknown as TmdbMovieDetails;
-}
-
-// ===========================================================================
-// TV Show endpoints
-// ===========================================================================
-
 export interface TmdbTvResult {
   id: number;
   name: string;
@@ -181,144 +119,203 @@ export interface TmdbTvDetails extends TmdbTvResult {
   };
 }
 
-/**
- * Get trending TV shows
- */
-export async function getTrendingTvShows(
-  apiKey: string,
-  timeWindow: 'day' | 'week' = 'week'
-): Promise<TmdbTvResult[]> {
-  const tmdb = getTmdb(apiKey);
-  const response = await tmdb.trending.trending('tv', timeWindow);
-  return response.results as unknown as TmdbTvResult[];
-}
-
-/**
- * Get popular TV shows
- */
-export async function getPopularTvShows(
-  apiKey: string,
-  page = 1
-): Promise<TmdbTvResult[]> {
-  const tmdb = getTmdb(apiKey);
-  const response = await tmdb.tvShows.popular({ page });
-  return response.results as TmdbTvResult[];
-}
-
-/**
- * Get top rated TV shows
- */
-export async function getTopRatedTvShows(
-  apiKey: string,
-  page = 1
-): Promise<TmdbTvResult[]> {
-  const tmdb = getTmdb(apiKey);
-  const response = await tmdb.tvShows.topRated({ page });
-  return response.results as TmdbTvResult[];
-}
-
-/**
- * Search TV shows
- */
-export async function searchTvShows(
-  apiKey: string,
-  query: string,
-  firstAirDateYear?: number
-): Promise<TmdbTvResult[]> {
-  const tmdb = getTmdb(apiKey);
-  const response = await tmdb.search.tvShows({ query, first_air_date_year: firstAirDateYear });
-  return response.results as TmdbTvResult[];
-}
-
-/**
- * Get TV show details
- */
-export async function getTvShowDetails(
-  apiKey: string,
-  tvId: number
-): Promise<TmdbTvDetails> {
-  const tmdb = getTmdb(apiKey);
-  const details = await tmdb.tvShows.details(tvId);
-  return details as unknown as TmdbTvDetails;
-}
-
-// ===========================================================================
-// Genre endpoints
-// ===========================================================================
-
 export interface TmdbGenre {
   id: number;
   name: string;
 }
 
-/**
- * Get movie genres
- */
-export async function getMovieGenres(apiKey: string): Promise<TmdbGenre[]> {
-  const tmdb = getTmdb(apiKey);
+// ===========================================================================
+// Movie endpoints (direct API)
+// ===========================================================================
+
+export async function getTrendingMovies(
+  accessToken: string,
+  timeWindow: 'day' | 'week' = 'week'
+): Promise<TmdbMovieResult[]> {
+  const tmdb = getTmdb(accessToken);
+  const response = await tmdb.trending.trending('movie', timeWindow);
+  return response.results as unknown as TmdbMovieResult[];
+}
+
+export async function getPopularMovies(
+  accessToken: string,
+  page = 1
+): Promise<TmdbMovieResult[]> {
+  const tmdb = getTmdb(accessToken);
+  const response = await tmdb.movies.popular({ page });
+  return response.results as TmdbMovieResult[];
+}
+
+export async function getTopRatedMovies(
+  accessToken: string,
+  page = 1
+): Promise<TmdbMovieResult[]> {
+  const tmdb = getTmdb(accessToken);
+  const response = await tmdb.movies.topRated({ page });
+  return response.results as TmdbMovieResult[];
+}
+
+export async function getNowPlayingMovies(
+  accessToken: string,
+  page = 1
+): Promise<TmdbMovieResult[]> {
+  const tmdb = getTmdb(accessToken);
+  const response = await tmdb.movies.nowPlaying({ page });
+  return response.results as TmdbMovieResult[];
+}
+
+export async function getUpcomingMovies(
+  accessToken: string,
+  page = 1
+): Promise<TmdbMovieResult[]> {
+  const tmdb = getTmdb(accessToken);
+  const response = await tmdb.movies.upcoming({ page });
+  return response.results as TmdbMovieResult[];
+}
+
+export async function searchMovies(
+  accessToken: string,
+  query: string,
+  year?: number
+): Promise<TmdbMovieResult[]> {
+  const tmdb = getTmdb(accessToken);
+  const response = await tmdb.search.movies({ query, year });
+  return response.results as TmdbMovieResult[];
+}
+
+export async function getMovieDetails(
+  accessToken: string,
+  movieId: number
+): Promise<TmdbMovieDetails> {
+  const tmdb = getTmdb(accessToken);
+  const details = await tmdb.movies.details(movieId);
+  return details as unknown as TmdbMovieDetails;
+}
+
+// ===========================================================================
+// TV Show endpoints (direct API)
+// ===========================================================================
+
+export async function getTrendingTvShows(
+  accessToken: string,
+  timeWindow: 'day' | 'week' = 'week'
+): Promise<TmdbTvResult[]> {
+  const tmdb = getTmdb(accessToken);
+  const response = await tmdb.trending.trending('tv', timeWindow);
+  return response.results as unknown as TmdbTvResult[];
+}
+
+export async function getPopularTvShows(
+  accessToken: string,
+  page = 1
+): Promise<TmdbTvResult[]> {
+  const tmdb = getTmdb(accessToken);
+  const response = await tmdb.tvShows.popular({ page });
+  return response.results as TmdbTvResult[];
+}
+
+export async function getTopRatedTvShows(
+  accessToken: string,
+  page = 1
+): Promise<TmdbTvResult[]> {
+  const tmdb = getTmdb(accessToken);
+  const response = await tmdb.tvShows.topRated({ page });
+  return response.results as TmdbTvResult[];
+}
+
+export async function getOnTheAirTvShows(
+  accessToken: string,
+  page = 1
+): Promise<TmdbTvResult[]> {
+  const tmdb = getTmdb(accessToken);
+  const response = await tmdb.tvShows.onTheAir({ page });
+  return response.results as TmdbTvResult[];
+}
+
+export async function getAiringTodayTvShows(
+  accessToken: string,
+  page = 1
+): Promise<TmdbTvResult[]> {
+  const tmdb = getTmdb(accessToken);
+  const response = await tmdb.tvShows.airingToday({ page });
+  return response.results as TmdbTvResult[];
+}
+
+export async function searchTvShows(
+  accessToken: string,
+  query: string,
+  firstAirDateYear?: number
+): Promise<TmdbTvResult[]> {
+  const tmdb = getTmdb(accessToken);
+  const response = await tmdb.search.tvShows({ query, first_air_date_year: firstAirDateYear });
+  return response.results as TmdbTvResult[];
+}
+
+export async function getTvShowDetails(
+  accessToken: string,
+  tvId: number
+): Promise<TmdbTvDetails> {
+  const tmdb = getTmdb(accessToken);
+  const details = await tmdb.tvShows.details(tvId);
+  return details as unknown as TmdbTvDetails;
+}
+
+// ===========================================================================
+// Genre endpoints (direct API)
+// ===========================================================================
+
+export async function getMovieGenres(accessToken: string): Promise<TmdbGenre[]> {
+  const tmdb = getTmdb(accessToken);
   const response = await tmdb.genres.movies();
   return response.genres;
 }
 
-/**
- * Get TV genres
- */
-export async function getTvGenres(apiKey: string): Promise<TmdbGenre[]> {
-  const tmdb = getTmdb(apiKey);
+export async function getTvGenres(accessToken: string): Promise<TmdbGenre[]> {
+  const tmdb = getTmdb(accessToken);
   const response = await tmdb.genres.tvShows();
   return response.genres;
 }
 
 // ===========================================================================
-// Discovery endpoints
+// Discovery endpoints (direct API)
 // ===========================================================================
 
-/**
- * Discover movies by genre
- */
 export async function discoverMoviesByGenre(
-  apiKey: string,
+  accessToken: string,
   genreId: number,
   page = 1
 ): Promise<TmdbMovieResult[]> {
-  const tmdb = getTmdb(apiKey);
+  const tmdb = getTmdb(accessToken);
   const response = await tmdb.discover.movie({
     with_genres: String(genreId),
-    page,
     sort_by: 'popularity.desc',
+    page,
   });
   return response.results as TmdbMovieResult[];
 }
 
-/**
- * Discover TV shows by genre
- */
 export async function discoverTvShowsByGenre(
-  apiKey: string,
+  accessToken: string,
   genreId: number,
   page = 1
 ): Promise<TmdbTvResult[]> {
-  const tmdb = getTmdb(apiKey);
+  const tmdb = getTmdb(accessToken);
   const response = await tmdb.discover.tvShow({
     with_genres: String(genreId),
-    page,
     sort_by: 'popularity.desc',
+    page,
   });
   return response.results as TmdbTvResult[];
 }
 
 // ===========================================================================
-// Validation
+// API key validation
 // ===========================================================================
 
-/**
- * Validate TMDB API key
- */
-export async function validateApiKey(apiKey: string): Promise<boolean> {
+export async function validateAccessToken(accessToken: string): Promise<boolean> {
   try {
-    const tmdb = new TMDB(apiKey);
-    // Try to fetch a simple endpoint
-    await tmdb.genres.movies();
+    const tmdb = new TMDB(accessToken);
+    await tmdb.configuration.getApiConfiguration();
     return true;
   } catch {
     return false;
@@ -326,7 +323,7 @@ export async function validateApiKey(apiKey: string): Promise<boolean> {
 }
 
 // ===========================================================================
-// GitHub Cache (fallback for users without API key)
+// GitHub Cache (fallback for users without access token)
 // ===========================================================================
 
 // URL to the raw cached TMDB data from GitHub (updated daily by GitHub Actions)
@@ -345,14 +342,16 @@ interface TmdbCacheData {
     popular?: TmdbMovieResult[];
     top_rated?: TmdbMovieResult[];
     now_playing?: TmdbMovieResult[];
+    upcoming?: TmdbMovieResult[];
     genres?: TmdbGenre[];
-    by_genre?: Record<string, TmdbMovieResult[]>;
   };
   tv: {
     trending_day?: TmdbTvResult[];
     trending_week?: TmdbTvResult[];
     popular?: TmdbTvResult[];
     top_rated?: TmdbTvResult[];
+    on_the_air?: TmdbTvResult[];
+    airing_today?: TmdbTvResult[];
     genres?: TmdbGenre[];
   };
 }
@@ -383,110 +382,91 @@ async function fetchCachedTmdbData(): Promise<TmdbCacheData | null> {
   }
 }
 
-/**
- * Get trending movies with cache fallback
- * Tries GitHub cache first if no API key, falls back to direct API
- */
-export async function getTrendingMoviesWithCache(
-  apiKey?: string,
-  timeWindow: 'day' | 'week' = 'week'
-): Promise<TmdbMovieResult[]> {
-  // Try cache first if no API key
-  if (!apiKey) {
-    const cache = await fetchCachedTmdbData();
-    const cacheKey = timeWindow === 'day' ? 'trending_day' : 'trending_week';
-    if (cache?.movies[cacheKey]) {
-      return cache.movies[cacheKey]!;
-    }
-    return [];
-  }
-  return getTrendingMovies(apiKey, timeWindow);
-}
+// ===========================================================================
+// Factory for cache-fallback functions
+// ===========================================================================
 
 /**
- * Get popular movies with cache fallback
+ * Creates a function that tries the cache first (if no access token),
+ * then falls back to the direct API.
  */
-export async function getPopularMoviesWithCache(apiKey?: string): Promise<TmdbMovieResult[]> {
-  if (!apiKey) {
-    const cache = await fetchCachedTmdbData();
-    if (cache?.movies.popular) {
-      return cache.movies.popular;
+function createCacheFallback<T>(
+  cacheGetter: (cache: TmdbCacheData | null) => T[] | undefined,
+  apiFn: (accessToken: string) => Promise<T[]>
+): (accessToken?: string | null) => Promise<T[]> {
+  return async (accessToken?: string | null): Promise<T[]> => {
+    if (!accessToken) {
+      const cache = await fetchCachedTmdbData();
+      return cacheGetter(cache) ?? [];
     }
-    return [];
-  }
-  return getPopularMovies(apiKey);
+    return apiFn(accessToken);
+  };
 }
 
-/**
- * Get top rated movies with cache fallback
- */
-export async function getTopRatedMoviesWithCache(apiKey?: string): Promise<TmdbMovieResult[]> {
-  if (!apiKey) {
-    const cache = await fetchCachedTmdbData();
-    if (cache?.movies.top_rated) {
-      return cache.movies.top_rated;
-    }
-    return [];
-  }
-  return getTopRatedMovies(apiKey);
-}
+// ===========================================================================
+// Cache-enabled endpoints (use these in hooks)
+// ===========================================================================
 
-/**
- * Get trending TV with cache fallback
- */
-export async function getTrendingTvShowsWithCache(
-  apiKey?: string,
-  timeWindow: 'day' | 'week' = 'week'
-): Promise<TmdbTvResult[]> {
-  if (!apiKey) {
-    const cache = await fetchCachedTmdbData();
-    const cacheKey = timeWindow === 'day' ? 'trending_day' : 'trending_week';
-    if (cache?.tv[cacheKey]) {
-      return cache.tv[cacheKey]!;
-    }
-    return [];
-  }
-  return getTrendingTvShows(apiKey, timeWindow);
-}
+// Movies
+export const getTrendingMoviesWithCache = (accessToken?: string | null, timeWindow: 'day' | 'week' = 'week') =>
+  createCacheFallback(
+    (c) => timeWindow === 'day' ? c?.movies.trending_day : c?.movies.trending_week,
+    (token) => getTrendingMovies(token, timeWindow)
+  )(accessToken);
 
-/**
- * Get popular TV with cache fallback
- */
-export async function getPopularTvShowsWithCache(apiKey?: string): Promise<TmdbTvResult[]> {
-  if (!apiKey) {
-    const cache = await fetchCachedTmdbData();
-    if (cache?.tv.popular) {
-      return cache.tv.popular;
-    }
-    return [];
-  }
-  return getPopularTvShows(apiKey);
-}
+export const getPopularMoviesWithCache = createCacheFallback(
+  (c) => c?.movies.popular,
+  getPopularMovies
+);
 
-/**
- * Get movie genres with cache fallback
- */
-export async function getMovieGenresWithCache(apiKey?: string): Promise<TmdbGenre[]> {
-  if (!apiKey) {
-    const cache = await fetchCachedTmdbData();
-    if (cache?.movies.genres) {
-      return cache.movies.genres;
-    }
-    return [];
-  }
-  return getMovieGenres(apiKey);
-}
+export const getTopRatedMoviesWithCache = createCacheFallback(
+  (c) => c?.movies.top_rated,
+  getTopRatedMovies
+);
 
-/**
- * Get TV genres with cache fallback
- */
-export async function getTvGenresWithCache(apiKey?: string): Promise<TmdbGenre[]> {
-  if (!apiKey) {
-    const cache = await fetchCachedTmdbData();
-    if (cache?.tv.genres) {
-      return cache.tv.genres;
-    }
-    return [];
-  }
-  return getTvGenres(apiKey);
-}
+export const getNowPlayingMoviesWithCache = createCacheFallback(
+  (c) => c?.movies.now_playing,
+  getNowPlayingMovies
+);
+
+export const getUpcomingMoviesWithCache = createCacheFallback(
+  (c) => c?.movies.upcoming,
+  getUpcomingMovies
+);
+
+export const getMovieGenresWithCache = createCacheFallback(
+  (c) => c?.movies.genres,
+  getMovieGenres
+);
+
+// TV Shows
+export const getTrendingTvShowsWithCache = (accessToken?: string | null, timeWindow: 'day' | 'week' = 'week') =>
+  createCacheFallback(
+    (c) => timeWindow === 'day' ? c?.tv.trending_day : c?.tv.trending_week,
+    (token) => getTrendingTvShows(token, timeWindow)
+  )(accessToken);
+
+export const getPopularTvShowsWithCache = createCacheFallback(
+  (c) => c?.tv.popular,
+  getPopularTvShows
+);
+
+export const getTopRatedTvShowsWithCache = createCacheFallback(
+  (c) => c?.tv.top_rated,
+  getTopRatedTvShows
+);
+
+export const getOnTheAirTvShowsWithCache = createCacheFallback(
+  (c) => c?.tv.on_the_air,
+  getOnTheAirTvShows
+);
+
+export const getAiringTodayTvShowsWithCache = createCacheFallback(
+  (c) => c?.tv.airing_today,
+  getAiringTodayTvShows
+);
+
+export const getTvGenresWithCache = createCacheFallback(
+  (c) => c?.tv.genres,
+  getTvGenres
+);

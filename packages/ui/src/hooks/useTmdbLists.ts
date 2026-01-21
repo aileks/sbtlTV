@@ -4,6 +4,10 @@
  * These hooks provide Netflix-style curated lists by matching
  * TMDB trending/popular lists against local Xtream content.
  *
+ * Uses WithCache functions that:
+ * - Use direct API when access token is available
+ * - Fall back to GitHub-cached lists when no token
+ *
  * PERFORMANCE: Uses indexed tmdb_id lookups instead of full table scans.
  */
 
@@ -11,14 +15,20 @@ import { useState, useEffect, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type StoredMovie, type StoredSeries } from '../db';
 import {
-  getTrendingMovies,
-  getTrendingTvShows,
-  getPopularMovies,
-  getPopularTvShows,
-  getTopRatedMovies,
-  getTopRatedTvShows,
-  getMovieGenres,
-  getTvGenres,
+  // WithCache functions (work with or without token)
+  getTrendingMoviesWithCache,
+  getTrendingTvShowsWithCache,
+  getPopularMoviesWithCache,
+  getPopularTvShowsWithCache,
+  getTopRatedMoviesWithCache,
+  getTopRatedTvShowsWithCache,
+  getNowPlayingMoviesWithCache,
+  getUpcomingMoviesWithCache,
+  getOnTheAirTvShowsWithCache,
+  getAiringTodayTvShowsWithCache,
+  getMovieGenresWithCache,
+  getTvGenresWithCache,
+  // Direct API functions (require token)
   discoverMoviesByGenre,
   discoverTvShowsByGenre,
   type TmdbMovieResult,
@@ -31,24 +41,29 @@ import {
 // ===========================================================================
 
 /**
- * Get TMDB API key from settings
+ * Get TMDB access token from settings
+ * Note: This is the "API Read Access Token" from TMDB, not the API key
  */
-export function useTmdbApiKey(): string | null {
-  const [apiKey, setApiKey] = useState<string | null>(null);
+export function useTmdbAccessToken(): string | null {
+  const [accessToken, setAccessToken] = useState<string | null>(null);
 
   useEffect(() => {
-    async function loadKey() {
+    async function loadToken() {
       if (!window.storage) return;
       const result = await window.storage.getSettings();
       if (result.data && 'tmdbApiKey' in result.data) {
-        setApiKey((result.data as { tmdbApiKey?: string }).tmdbApiKey ?? null);
+        // Still stored as tmdbApiKey in settings for backwards compat
+        setAccessToken((result.data as { tmdbApiKey?: string }).tmdbApiKey ?? null);
       }
     }
-    loadKey();
+    loadToken();
   }, []);
 
-  return apiKey;
+  return accessToken;
 }
+
+// Alias for backwards compatibility
+export const useTmdbApiKey = useTmdbAccessToken;
 
 // ===========================================================================
 // Helper: Match TMDB list to local content using index
@@ -91,146 +106,119 @@ function sortByTmdbOrder<T extends { tmdb_id?: number }>(
 }
 
 // ===========================================================================
+// Generic hook factory for TMDB movie lists
+// ===========================================================================
+
+function useMovieList(
+  fetchFn: (token?: string | null) => Promise<TmdbMovieResult[]>,
+  accessToken: string | null
+) {
+  const [tmdbMovies, setTmdbMovies] = useState<TmdbMovieResult[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+
+    fetchFn(accessToken)
+      .then(setTmdbMovies)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [accessToken]);
+
+  const tmdbIds = useMemo(() => tmdbMovies.map((m) => m.id), [tmdbMovies]);
+  const localMovies = useMoviesByTmdbIds(tmdbIds);
+
+  const movies = useMemo(() => {
+    if (!localMovies || tmdbMovies.length === 0) return [];
+    const tmdbOrder = new Map(tmdbMovies.map((m, i) => [m.id, i]));
+    return sortByTmdbOrder(localMovies, tmdbOrder);
+  }, [localMovies, tmdbMovies]);
+
+  return {
+    movies,
+    loading: loading || localMovies === undefined,
+    error,
+  };
+}
+
+// ===========================================================================
+// Generic hook factory for TMDB series lists
+// ===========================================================================
+
+function useSeriesList(
+  fetchFn: (token?: string | null) => Promise<TmdbTvResult[]>,
+  accessToken: string | null
+) {
+  const [tmdbSeries, setTmdbSeries] = useState<TmdbTvResult[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+
+    fetchFn(accessToken)
+      .then(setTmdbSeries)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [accessToken]);
+
+  const tmdbIds = useMemo(() => tmdbSeries.map((s) => s.id), [tmdbSeries]);
+  const localSeries = useSeriesByTmdbIds(tmdbIds);
+
+  const series = useMemo(() => {
+    if (!localSeries || tmdbSeries.length === 0) return [];
+    const tmdbOrder = new Map(tmdbSeries.map((s, i) => [s.id, i]));
+    return sortByTmdbOrder(localSeries, tmdbOrder);
+  }, [localSeries, tmdbSeries]);
+
+  return {
+    series,
+    loading: loading || localSeries === undefined,
+    error,
+  };
+}
+
+// ===========================================================================
 // Movie List Hooks
 // ===========================================================================
 
-/**
- * Get trending movies that are available locally
- */
-export function useTrendingMovies(apiKey: string | null) {
-  const [tmdbMovies, setTmdbMovies] = useState<TmdbMovieResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export function useTrendingMovies(accessToken: string | null) {
+  return useMovieList(
+    (token) => getTrendingMoviesWithCache(token, 'week'),
+    accessToken
+  );
+}
 
-  // Fetch trending list from TMDB
-  useEffect(() => {
-    if (!apiKey) return;
+export function usePopularMovies(accessToken: string | null) {
+  return useMovieList(getPopularMoviesWithCache, accessToken);
+}
 
-    setLoading(true);
-    setError(null);
+export function useTopRatedMovies(accessToken: string | null) {
+  return useMovieList(getTopRatedMoviesWithCache, accessToken);
+}
 
-    getTrendingMovies(apiKey)
-      .then(setTmdbMovies)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [apiKey]);
+export function useNowPlayingMovies(accessToken: string | null) {
+  return useMovieList(getNowPlayingMoviesWithCache, accessToken);
+}
 
-  // Extract TMDB IDs for indexed lookup
-  const tmdbIds = useMemo(() => tmdbMovies.map((m) => m.id), [tmdbMovies]);
-
-  // Query local movies by TMDB IDs (indexed!)
-  const localMovies = useMoviesByTmdbIds(tmdbIds);
-
-  // Sort by TMDB order
-  const movies = useMemo(() => {
-    if (!localMovies || tmdbMovies.length === 0) return [];
-    const tmdbOrder = new Map(tmdbMovies.map((m, i) => [m.id, i]));
-    return sortByTmdbOrder(localMovies, tmdbOrder);
-  }, [localMovies, tmdbMovies]);
-
-  return {
-    movies,
-    loading: loading || localMovies === undefined,
-    error,
-  };
+export function useUpcomingMovies(accessToken: string | null) {
+  return useMovieList(getUpcomingMoviesWithCache, accessToken);
 }
 
 /**
- * Get popular movies that are available locally
- */
-export function usePopularMovies(apiKey: string | null) {
-  const [tmdbMovies, setTmdbMovies] = useState<TmdbMovieResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!apiKey) return;
-
-    setLoading(true);
-    setError(null);
-
-    getPopularMovies(apiKey)
-      .then(setTmdbMovies)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [apiKey]);
-
-  const tmdbIds = useMemo(() => tmdbMovies.map((m) => m.id), [tmdbMovies]);
-  const localMovies = useMoviesByTmdbIds(tmdbIds);
-
-  const movies = useMemo(() => {
-    if (!localMovies || tmdbMovies.length === 0) return [];
-    const tmdbOrder = new Map(tmdbMovies.map((m, i) => [m.id, i]));
-    return sortByTmdbOrder(localMovies, tmdbOrder);
-  }, [localMovies, tmdbMovies]);
-
-  return {
-    movies,
-    loading: loading || localMovies === undefined,
-    error,
-  };
-}
-
-/**
- * Get top rated movies that are available locally
- */
-export function useTopRatedMovies(apiKey: string | null) {
-  const [tmdbMovies, setTmdbMovies] = useState<TmdbMovieResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!apiKey) return;
-
-    setLoading(true);
-    setError(null);
-
-    getTopRatedMovies(apiKey)
-      .then(setTmdbMovies)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [apiKey]);
-
-  const tmdbIds = useMemo(() => tmdbMovies.map((m) => m.id), [tmdbMovies]);
-  const localMovies = useMoviesByTmdbIds(tmdbIds);
-
-  const movies = useMemo(() => {
-    if (!localMovies || tmdbMovies.length === 0) return [];
-    const tmdbOrder = new Map(tmdbMovies.map((m, i) => [m.id, i]));
-    return sortByTmdbOrder(localMovies, tmdbOrder);
-  }, [localMovies, tmdbMovies]);
-
-  return {
-    movies,
-    loading: loading || localMovies === undefined,
-    error,
-  };
-}
-
-/**
- * Get movies sorted by local popularity (TMDB popularity score)
- * Used as fallback when no API key
- * Falls back to recently added if no popularity data available
+ * Get local movies sorted by popularity (no TMDB required)
  */
 export function useLocalPopularMovies(limit = 20) {
   const movies = useLiveQuery(async () => {
-    // Query recent movies
-    const allMovies = await db.vodMovies
-      .orderBy('added')
+    return db.vodMovies
+      .orderBy('popularity')
       .reverse()
-      .limit(limit * 2)
+      .filter((m) => m.popularity !== undefined && m.popularity > 0)
+      .limit(limit)
       .toArray();
-
-    // If any have popularity, sort by it
-    const withPopularity = allMovies.filter((m) => m.popularity !== undefined);
-    if (withPopularity.length > 0) {
-      return withPopularity
-        .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
-        .slice(0, limit);
-    }
-
-    // Fallback: just return recent movies
-    return allMovies.slice(0, limit);
   }, [limit]);
 
   return {
@@ -240,24 +228,24 @@ export function useLocalPopularMovies(limit = 20) {
 }
 
 /**
- * Get movies by TMDB genre (that are available locally)
+ * Get movies by genre (requires access token for discover API)
  */
-export function useMoviesByGenre(apiKey: string | null, genreId: number | null) {
+export function useMoviesByGenre(accessToken: string | null, genreId: number | null) {
   const [tmdbMovies, setTmdbMovies] = useState<TmdbMovieResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!apiKey || !genreId) return;
+    if (!accessToken || !genreId) return;
 
     setLoading(true);
     setError(null);
 
-    discoverMoviesByGenre(apiKey, genreId)
+    discoverMoviesByGenre(accessToken, genreId)
       .then(setTmdbMovies)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [apiKey, genreId]);
+  }, [accessToken, genreId]);
 
   const tmdbIds = useMemo(() => tmdbMovies.map((m) => m.id), [tmdbMovies]);
   const localMovies = useMoviesByTmdbIds(tmdbIds);
@@ -276,139 +264,43 @@ export function useMoviesByGenre(apiKey: string | null, genreId: number | null) 
 }
 
 // ===========================================================================
-// Series List Hooks
+// TV Series List Hooks
 // ===========================================================================
 
-/**
- * Get trending TV shows that are available locally
- */
-export function useTrendingSeries(apiKey: string | null) {
-  const [tmdbShows, setTmdbShows] = useState<TmdbTvResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export function useTrendingSeries(accessToken: string | null) {
+  return useSeriesList(
+    (token) => getTrendingTvShowsWithCache(token, 'week'),
+    accessToken
+  );
+}
 
-  useEffect(() => {
-    if (!apiKey) return;
+export function usePopularSeries(accessToken: string | null) {
+  return useSeriesList(getPopularTvShowsWithCache, accessToken);
+}
 
-    setLoading(true);
-    setError(null);
+export function useTopRatedSeries(accessToken: string | null) {
+  return useSeriesList(getTopRatedTvShowsWithCache, accessToken);
+}
 
-    getTrendingTvShows(apiKey)
-      .then(setTmdbShows)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [apiKey]);
+export function useOnTheAirSeries(accessToken: string | null) {
+  return useSeriesList(getOnTheAirTvShowsWithCache, accessToken);
+}
 
-  const tmdbIds = useMemo(() => tmdbShows.map((s) => s.id), [tmdbShows]);
-  const localSeries = useSeriesByTmdbIds(tmdbIds);
-
-  const series = useMemo(() => {
-    if (!localSeries || tmdbShows.length === 0) return [];
-    const tmdbOrder = new Map(tmdbShows.map((s, i) => [s.id, i]));
-    return sortByTmdbOrder(localSeries, tmdbOrder);
-  }, [localSeries, tmdbShows]);
-
-  return {
-    series,
-    loading: loading || localSeries === undefined,
-    error,
-  };
+export function useAiringTodaySeries(accessToken: string | null) {
+  return useSeriesList(getAiringTodayTvShowsWithCache, accessToken);
 }
 
 /**
- * Get popular TV shows that are available locally
- */
-export function usePopularSeries(apiKey: string | null) {
-  const [tmdbShows, setTmdbShows] = useState<TmdbTvResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!apiKey) return;
-
-    setLoading(true);
-    setError(null);
-
-    getPopularTvShows(apiKey)
-      .then(setTmdbShows)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [apiKey]);
-
-  const tmdbIds = useMemo(() => tmdbShows.map((s) => s.id), [tmdbShows]);
-  const localSeries = useSeriesByTmdbIds(tmdbIds);
-
-  const series = useMemo(() => {
-    if (!localSeries || tmdbShows.length === 0) return [];
-    const tmdbOrder = new Map(tmdbShows.map((s, i) => [s.id, i]));
-    return sortByTmdbOrder(localSeries, tmdbOrder);
-  }, [localSeries, tmdbShows]);
-
-  return {
-    series,
-    loading: loading || localSeries === undefined,
-    error,
-  };
-}
-
-/**
- * Get top rated TV shows that are available locally
- */
-export function useTopRatedSeries(apiKey: string | null) {
-  const [tmdbShows, setTmdbShows] = useState<TmdbTvResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!apiKey) return;
-
-    setLoading(true);
-    setError(null);
-
-    getTopRatedTvShows(apiKey)
-      .then(setTmdbShows)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [apiKey]);
-
-  const tmdbIds = useMemo(() => tmdbShows.map((s) => s.id), [tmdbShows]);
-  const localSeries = useSeriesByTmdbIds(tmdbIds);
-
-  const series = useMemo(() => {
-    if (!localSeries || tmdbShows.length === 0) return [];
-    const tmdbOrder = new Map(tmdbShows.map((s, i) => [s.id, i]));
-    return sortByTmdbOrder(localSeries, tmdbOrder);
-  }, [localSeries, tmdbShows]);
-
-  return {
-    series,
-    loading: loading || localSeries === undefined,
-    error,
-  };
-}
-
-/**
- * Get series sorted by local popularity
- * Falls back to recently added if no popularity data available
+ * Get local series sorted by popularity (no TMDB required)
  */
 export function useLocalPopularSeries(limit = 20) {
   const series = useLiveQuery(async () => {
-    const allSeries = await db.vodSeries
-      .orderBy('added')
+    return db.vodSeries
+      .orderBy('popularity')
       .reverse()
-      .limit(limit * 2)
+      .filter((s) => s.popularity !== undefined && s.popularity > 0)
+      .limit(limit)
       .toArray();
-
-    // If any have popularity, sort by it
-    const withPopularity = allSeries.filter((s) => s.popularity !== undefined);
-    if (withPopularity.length > 0) {
-      return withPopularity
-        .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
-        .slice(0, limit);
-    }
-
-    // Fallback: just return recent series
-    return allSeries.slice(0, limit);
   }, [limit]);
 
   return {
@@ -418,33 +310,33 @@ export function useLocalPopularSeries(limit = 20) {
 }
 
 /**
- * Get series by TMDB genre
+ * Get series by genre (requires access token for discover API)
  */
-export function useSeriesByGenre(apiKey: string | null, genreId: number | null) {
-  const [tmdbShows, setTmdbShows] = useState<TmdbTvResult[]>([]);
+export function useSeriesByGenre(accessToken: string | null, genreId: number | null) {
+  const [tmdbSeries, setTmdbSeries] = useState<TmdbTvResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!apiKey || !genreId) return;
+    if (!accessToken || !genreId) return;
 
     setLoading(true);
     setError(null);
 
-    discoverTvShowsByGenre(apiKey, genreId)
-      .then(setTmdbShows)
+    discoverTvShowsByGenre(accessToken, genreId)
+      .then(setTmdbSeries)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [apiKey, genreId]);
+  }, [accessToken, genreId]);
 
-  const tmdbIds = useMemo(() => tmdbShows.map((s) => s.id), [tmdbShows]);
+  const tmdbIds = useMemo(() => tmdbSeries.map((s) => s.id), [tmdbSeries]);
   const localSeries = useSeriesByTmdbIds(tmdbIds);
 
   const series = useMemo(() => {
-    if (!localSeries || tmdbShows.length === 0) return [];
-    const tmdbOrder = new Map(tmdbShows.map((s, i) => [s.id, i]));
+    if (!localSeries || tmdbSeries.length === 0) return [];
+    const tmdbOrder = new Map(tmdbSeries.map((s, i) => [s.id, i]));
     return sortByTmdbOrder(localSeries, tmdbOrder);
-  }, [localSeries, tmdbShows]);
+  }, [localSeries, tmdbSeries]);
 
   return {
     series,
@@ -457,42 +349,32 @@ export function useSeriesByGenre(apiKey: string | null, genreId: number | null) 
 // Genre Hooks
 // ===========================================================================
 
-/**
- * Get movie genres from TMDB
- */
-export function useMovieGenres(apiKey: string | null) {
+export function useMovieGenres(accessToken: string | null) {
   const [genres, setGenres] = useState<TmdbGenre[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!apiKey) return;
-
     setLoading(true);
-    getMovieGenres(apiKey)
+    getMovieGenresWithCache(accessToken)
       .then(setGenres)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [apiKey]);
+  }, [accessToken]);
 
   return { genres, loading };
 }
 
-/**
- * Get TV genres from TMDB
- */
-export function useTvGenres(apiKey: string | null) {
+export function useTvGenres(accessToken: string | null) {
   const [genres, setGenres] = useState<TmdbGenre[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!apiKey) return;
-
     setLoading(true);
-    getTvGenres(apiKey)
+    getTvGenresWithCache(accessToken)
       .then(setGenres)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [apiKey]);
+  }, [accessToken]);
 
   return { genres, loading };
 }
@@ -503,32 +385,27 @@ export function useTvGenres(apiKey: string | null) {
 
 /**
  * Get featured content for hero section
- * Returns top items sorted by TMDB popularity
+ * Returns top items from trending (with cache fallback)
  */
-export function useFeaturedContent(apiKey: string | null, type: 'movies' | 'series', count = 5) {
-  const { movies: trendingMovies } = useTrendingMovies(apiKey);
-  const { series: trendingSeries } = useTrendingSeries(apiKey);
+export function useFeaturedContent(accessToken: string | null, type: 'movies' | 'series', count = 5) {
+  const { movies: trendingMovies } = useTrendingMovies(accessToken);
+  const { series: trendingSeries } = useTrendingSeries(accessToken);
   const { movies: popularMovies } = useLocalPopularMovies(count);
   const { series: popularSeries } = useLocalPopularSeries(count);
 
-  // Use TMDB trending if API key available, otherwise local popularity
   const featured = useMemo(() => {
     if (type === 'movies') {
-      const items = apiKey && trendingMovies.length > 0
-        ? trendingMovies
-        : popularMovies;
+      // Use trending (from API or cache), fall back to local popularity
+      const items = trendingMovies.length > 0 ? trendingMovies : popularMovies;
       return items.slice(0, count);
     } else {
-      const items = apiKey && trendingSeries.length > 0
-        ? trendingSeries
-        : popularSeries;
+      const items = trendingSeries.length > 0 ? trendingSeries : popularSeries;
       return items.slice(0, count);
     }
-  }, [type, apiKey, trendingMovies, trendingSeries, popularMovies, popularSeries, count]);
+  }, [type, trendingMovies, trendingSeries, popularMovies, popularSeries, count]);
 
   return {
     items: featured,
     loading: false,
   };
 }
-

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import type { Source } from '../types/electron';
 import { syncAllSources, syncAllVod, type SyncResult, type VodSyncResult } from '../db/sync';
 import { useSyncStatus } from '../hooks/useChannels';
-import { validateApiKey } from '../services/tmdb';
+import { validateAccessToken } from '../services/tmdb';
 import './Settings.css';
 
 interface SettingsProps {
@@ -104,7 +104,7 @@ export function Settings({ onClose }: SettingsProps) {
     setTmdbKeyValid(null);
 
     // Validate the key first
-    const isValid = tmdbApiKey ? await validateApiKey(tmdbApiKey) : true;
+    const isValid = tmdbApiKey ? await validateAccessToken(tmdbApiKey) : true;
     setTmdbKeyValid(isValid);
 
     if (isValid) {

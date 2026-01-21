@@ -9,10 +9,16 @@ import { useRecentMovies, useRecentSeries, useVodCategories } from '../hooks/use
 import {
   useTrendingMovies,
   usePopularMovies,
+  useTopRatedMovies,
+  useNowPlayingMovies,
+  useUpcomingMovies,
   useLocalPopularMovies,
   useMoviesByGenre,
   useTrendingSeries,
   usePopularSeries,
+  useTopRatedSeries,
+  useOnTheAirSeries,
+  useAiringTodaySeries,
   useLocalPopularSeries,
   useSeriesByGenre,
   useFeaturedContent,
@@ -68,11 +74,29 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   const { movies: popularMovies, loading: popularMoviesLoading } = usePopularMovies(type === 'movie' ? tmdbApiKey : null);
   const { series: popularSeries, loading: popularSeriesLoading } = usePopularSeries(type === 'series' ? tmdbApiKey : null);
 
+  // Top rated
+  const { movies: topRatedMovies, loading: topRatedMoviesLoading } = useTopRatedMovies(type === 'movie' ? tmdbApiKey : null);
+  const { series: topRatedSeries, loading: topRatedSeriesLoading } = useTopRatedSeries(type === 'series' ? tmdbApiKey : null);
+
+  // Now playing (movies) / On the air (series)
+  const { movies: nowPlayingMovies, loading: nowPlayingLoading } = useNowPlayingMovies(type === 'movie' ? tmdbApiKey : null);
+  const { series: onTheAirSeries, loading: onTheAirLoading } = useOnTheAirSeries(type === 'series' ? tmdbApiKey : null);
+
+  // Upcoming (movies) / Airing today (series)
+  const { movies: upcomingMovies, loading: upcomingLoading } = useUpcomingMovies(type === 'movie' ? tmdbApiKey : null);
+  const { series: airingTodaySeries, loading: airingTodayLoading } = useAiringTodaySeries(type === 'series' ? tmdbApiKey : null);
+
   // Select the right data based on type
   const trendingItems = type === 'movie' ? trendingMovies : trendingSeries;
   const trendingLoading = type === 'movie' ? trendingMoviesLoading : trendingSeriesLoading;
   const popularItems = type === 'movie' ? popularMovies : popularSeries;
   const popularLoading = type === 'movie' ? popularMoviesLoading : popularSeriesLoading;
+  const topRatedItems = type === 'movie' ? topRatedMovies : topRatedSeries;
+  const topRatedLoading = type === 'movie' ? topRatedMoviesLoading : topRatedSeriesLoading;
+  const nowOrOnAirItems = type === 'movie' ? nowPlayingMovies : onTheAirSeries;
+  const nowOrOnAirLoading = type === 'movie' ? nowPlayingLoading : onTheAirLoading;
+  const upcomingOrAiringItems = type === 'movie' ? upcomingMovies : airingTodaySeries;
+  const upcomingOrAiringLoading = type === 'movie' ? upcomingLoading : airingTodayLoading;
 
   // Fallback: local popularity
   const { movies: localPopularMovies } = useLocalPopularMovies(type === 'movie' ? 20 : 0);
@@ -213,41 +237,75 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
 
             {/* Carousels */}
             <div className="vod-page__carousels">
-              {showTmdbContent ? (
-                <>
-                  {trendingItems.length > 0 && (
-                    <HorizontalCarousel
-                      title="Trending Now"
-                      items={trendingItems}
-                      type={type}
-                      onItemClick={handleItemClick}
-                      loading={trendingLoading}
-                    />
-                  )}
+              {/* Trending */}
+              {trendingItems.length > 0 && (
+                <HorizontalCarousel
+                  title="Trending Now"
+                  items={trendingItems}
+                  type={type}
+                  onItemClick={handleItemClick}
+                  loading={trendingLoading}
+                />
+              )}
 
-                  {popularItems.length > 0 && (
-                    <HorizontalCarousel
-                      title="Popular"
-                      items={popularItems}
-                      type={type}
-                      onItemClick={handleItemClick}
-                      loading={popularLoading}
-                    />
-                  )}
-
-                  {firstGenre && genreItems.length > 0 && (
-                    <HorizontalCarousel
-                      title={firstGenre.name}
-                      items={genreItems}
-                      type={type}
-                      onItemClick={handleItemClick}
-                    />
-                  )}
-                </>
-              ) : (
-                // Fallback without TMDB
+              {/* Popular */}
+              {popularItems.length > 0 && (
                 <HorizontalCarousel
                   title="Popular"
+                  items={popularItems}
+                  type={type}
+                  onItemClick={handleItemClick}
+                  loading={popularLoading}
+                />
+              )}
+
+              {/* Top Rated */}
+              {topRatedItems.length > 0 && (
+                <HorizontalCarousel
+                  title="Top Rated"
+                  items={topRatedItems}
+                  type={type}
+                  onItemClick={handleItemClick}
+                  loading={topRatedLoading}
+                />
+              )}
+
+              {/* Now Playing (movies) / On The Air (series) */}
+              {nowOrOnAirItems.length > 0 && (
+                <HorizontalCarousel
+                  title={type === 'movie' ? 'Now Playing' : 'On The Air'}
+                  items={nowOrOnAirItems}
+                  type={type}
+                  onItemClick={handleItemClick}
+                  loading={nowOrOnAirLoading}
+                />
+              )}
+
+              {/* Upcoming (movies) / Airing Today (series) */}
+              {upcomingOrAiringItems.length > 0 && (
+                <HorizontalCarousel
+                  title={type === 'movie' ? 'Coming Soon' : 'Airing Today'}
+                  items={upcomingOrAiringItems}
+                  type={type}
+                  onItemClick={handleItemClick}
+                  loading={upcomingOrAiringLoading}
+                />
+              )}
+
+              {/* Genre-based list */}
+              {firstGenre && genreItems.length > 0 && (
+                <HorizontalCarousel
+                  title={firstGenre.name}
+                  items={genreItems}
+                  type={type}
+                  onItemClick={handleItemClick}
+                />
+              )}
+
+              {/* Fallback: local popular if no TMDB content */}
+              {!showTmdbContent && localPopularItems.length > 0 && (
+                <HorizontalCarousel
+                  title="Popular in Your Library"
                   items={localPopularItems}
                   type={type}
                   onItemClick={handleItemClick}
