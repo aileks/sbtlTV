@@ -329,9 +329,8 @@ export async function validateApiKey(apiKey: string): Promise<boolean> {
 // GitHub Cache (fallback for users without API key)
 // ===========================================================================
 
-// URL to the raw cached TMDB data from GitHub
-// TODO: Update this to your actual GitHub repo once published
-const GITHUB_CACHE_URL = 'https://raw.githubusercontent.com/your-username/sbtlTV/main/data/tmdb-cache.json';
+// URL to the raw cached TMDB data from GitHub (updated daily by GitHub Actions)
+const GITHUB_CACHE_URL = 'https://raw.githubusercontent.com/thesubtleties/sbtlTV-tmdb-cache/main/data/tmdb-cache.json';
 
 // Cache the fetched data in memory
 let cachedTmdbData: TmdbCacheData | null = null;
