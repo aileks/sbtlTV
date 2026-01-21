@@ -107,8 +107,32 @@
   margin: 4px 0 6px;
 }
 
-/* Responsive - hide on small screens */
+/* Responsive - compact on narrow width */
 @media (max-width: 768px) {
+  .alphabet-rail {
+    padding: 4px 2px;
+    right: 6px;
+  }
+
+  .alphabet-rail__letter {
+    width: 24px;
+    height: 16px;
+    font-size: 0.65rem;
+  }
+
+  .alphabet-rail__letter--active {
+    font-size: 0.8rem;
+  }
+
+  .alphabet-rail__magnifier {
+    width: 40px;
+    height: 40px;
+    font-size: 1.25rem;
+  }
+}
+
+/* Responsive - compact on short height */
+@media (max-height: 710px) {
   .alphabet-rail {
     padding: 4px 2px;
     right: 6px;

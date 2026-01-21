@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 
 // Minimum window dimensions
 const MIN_WIDTH = 640;
-const MIN_HEIGHT = 480;
+const MIN_HEIGHT = 620;
 
 let mainWindow: BrowserWindow | null = null;
 let mpvProcess: ChildProcess | null = null;
