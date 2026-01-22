@@ -794,3 +794,9 @@
   outline: none;
   border-color: rgba(0, 212, 255, 0.5);
 }
+
+.refresh-settings select option {
+  background: #1a1a1a;
+  color: #fff;
+  padding: 8px 12px;
+}
