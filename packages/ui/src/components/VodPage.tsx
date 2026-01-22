@@ -5,20 +5,18 @@ import { HorizontalCategoryStrip } from './vod/HorizontalCategoryStrip';
 import { VodBrowse } from './vod/VodBrowse';
 import { MovieDetail } from './vod/MovieDetail';
 import { SeriesDetail } from './vod/SeriesDetail';
-import { useRecentMovies, useRecentSeries, useVodCategories } from '../hooks/useVod';
+import { useVodCategories } from '../hooks/useVod';
 import {
   useTrendingMovies,
   usePopularMovies,
   useTopRatedMovies,
   useNowPlayingMovies,
-  useUpcomingMovies,
   useLocalPopularMovies,
   useMoviesByGenre,
   useTrendingSeries,
   usePopularSeries,
   useTopRatedSeries,
   useOnTheAirSeries,
-  useAiringTodaySeries,
   useLocalPopularSeries,
   useSeriesByGenre,
   useFeaturedContent,
@@ -82,10 +80,6 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   const { movies: nowPlayingMovies, loading: nowPlayingLoading } = useNowPlayingMovies(type === 'movie' ? tmdbApiKey : null);
   const { series: onTheAirSeries, loading: onTheAirLoading } = useOnTheAirSeries(type === 'series' ? tmdbApiKey : null);
 
-  // Upcoming (movies) / Airing today (series)
-  const { movies: upcomingMovies, loading: upcomingLoading } = useUpcomingMovies(type === 'movie' ? tmdbApiKey : null);
-  const { series: airingTodaySeries, loading: airingTodayLoading } = useAiringTodaySeries(type === 'series' ? tmdbApiKey : null);
-
   // Select the right data based on type
   const trendingItems = type === 'movie' ? trendingMovies : trendingSeries;
   const trendingLoading = type === 'movie' ? trendingMoviesLoading : trendingSeriesLoading;
@@ -95,19 +89,11 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   const topRatedLoading = type === 'movie' ? topRatedMoviesLoading : topRatedSeriesLoading;
   const nowOrOnAirItems = type === 'movie' ? nowPlayingMovies : onTheAirSeries;
   const nowOrOnAirLoading = type === 'movie' ? nowPlayingLoading : onTheAirLoading;
-  const upcomingOrAiringItems = type === 'movie' ? upcomingMovies : airingTodaySeries;
-  const upcomingOrAiringLoading = type === 'movie' ? upcomingLoading : airingTodayLoading;
 
   // Fallback: local popularity
   const { movies: localPopularMovies } = useLocalPopularMovies(type === 'movie' ? 20 : 0);
   const { series: localPopularSeries } = useLocalPopularSeries(type === 'series' ? 20 : 0);
   const localPopularItems = type === 'movie' ? localPopularMovies : localPopularSeries;
-
-  // Recently added
-  const { movies: recentMovies, loading: recentMoviesLoading } = useRecentMovies(type === 'movie' ? 20 : 0);
-  const { series: recentSeries, loading: recentSeriesLoading } = useRecentSeries(type === 'series' ? 20 : 0);
-  const recentItems = type === 'movie' ? recentMovies : recentSeries;
-  const recentLoading = type === 'movie' ? recentMoviesLoading : recentSeriesLoading;
 
   // VOD categories
   const { categories } = useVodCategories(type);
@@ -281,17 +267,6 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
                 />
               )}
 
-              {/* Upcoming (movies) / Airing Today (series) */}
-              {upcomingOrAiringItems.length > 0 && (
-                <HorizontalCarousel
-                  title={type === 'movie' ? 'Coming Soon' : 'Airing Today'}
-                  items={upcomingOrAiringItems}
-                  type={type}
-                  onItemClick={handleItemClick}
-                  loading={upcomingOrAiringLoading}
-                />
-              )}
-
               {/* Genre-based list */}
               {firstGenre && genreItems.length > 0 && (
                 <HorizontalCarousel
@@ -311,14 +286,6 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
                   onItemClick={handleItemClick}
                 />
               )}
-
-              <HorizontalCarousel
-                title="Recently Added"
-                items={recentItems}
-                type={type}
-                onItemClick={handleItemClick}
-                loading={recentLoading}
-              />
             </div>
           </>
         )}
