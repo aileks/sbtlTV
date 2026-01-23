@@ -274,7 +274,8 @@ export function useLocalPopularMovies(limit = 20) {
  */
 export function useMoviesByGenre(accessToken: string | null, genreId: number | null) {
   const [tmdbMovies, setTmdbMovies] = useState<TmdbMovieResult[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Start loading=true if we have params - prevents brief "empty" flash before useEffect
+  const [loading, setLoading] = useState(!!accessToken && !!genreId);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -356,7 +357,8 @@ export function useLocalPopularSeries(limit = 20) {
  */
 export function useSeriesByGenre(accessToken: string | null, genreId: number | null) {
   const [tmdbSeries, setTmdbSeries] = useState<TmdbTvResult[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Start loading=true if we have params - prevents brief "empty" flash before useEffect
+  const [loading, setLoading] = useState(!!accessToken && !!genreId);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -419,6 +421,166 @@ export function useTvGenres(accessToken: string | null) {
   }, [accessToken]);
 
   return { genres, loading };
+}
+
+// ===========================================================================
+// Multi-Genre Hooks (pre-fetch all genres at once)
+// ===========================================================================
+
+interface GenreData<T> {
+  genreId: number;
+  items: T[];
+  loading: boolean;
+}
+
+/**
+ * Pre-fetch movies for multiple genres at once
+ * Returns a Map of genreId -> { items, loading }
+ */
+export function useMultipleMoviesByGenre(
+  accessToken: string | null,
+  genreIds: number[]
+): Map<number, { items: StoredMovie[]; loading: boolean }> {
+  const [tmdbData, setTmdbData] = useState<Map<number, TmdbMovieResult[]>>(new Map());
+  const [fetchedGenreIds, setFetchedGenreIds] = useState<string>('');
+
+  // Track which genreIds we've fetched (as string for easy comparison)
+  const genreIdsKey = genreIds.join(',');
+
+  // Fetch all genres in parallel
+  useEffect(() => {
+    if (!accessToken || genreIds.length === 0) return;
+
+    // Fetch each genre in parallel
+    Promise.all(
+      genreIds.map(async (genreId) => {
+        try {
+          const movies = await discoverMoviesByGenre(accessToken, genreId);
+          return { genreId, movies };
+        } catch {
+          return { genreId, movies: [] };
+        }
+      })
+    ).then((results) => {
+      const newData = new Map<number, TmdbMovieResult[]>();
+      results.forEach(({ genreId, movies }) => {
+        newData.set(genreId, movies);
+      });
+      setTmdbData(newData);
+      setFetchedGenreIds(genreIdsKey);
+    });
+  }, [accessToken, genreIdsKey]); // genreIdsKey for stable dependency
+
+  // Collect all TMDB IDs for batch local lookup
+  const allTmdbIds = useMemo(() => {
+    const ids: number[] = [];
+    tmdbData.forEach((movies) => {
+      movies.forEach((m) => ids.push(m.id));
+    });
+    return ids;
+  }, [tmdbData]);
+
+  const localMovies = useMoviesByTmdbIds(allTmdbIds);
+
+  // Build result map
+  // Loading if: fetch not complete OR local lookup not complete
+  const isFetching = fetchedGenreIds !== genreIdsKey;
+
+  return useMemo(() => {
+    const result = new Map<number, { items: StoredMovie[]; loading: boolean }>();
+
+    genreIds.forEach((genreId) => {
+      const tmdbMovies = tmdbData.get(genreId) || [];
+      const isLoading = isFetching || localMovies === undefined;
+
+      if (isLoading) {
+        result.set(genreId, { items: [], loading: true });
+      } else if (tmdbMovies.length === 0) {
+        result.set(genreId, { items: [], loading: false });
+      } else {
+        const tmdbOrder = new Map(tmdbMovies.map((m, i) => [m.id, i]));
+        const items = sortByTmdbOrder(localMovies || [], tmdbOrder);
+        result.set(genreId, { items, loading: false });
+      }
+    });
+
+    return result;
+  }, [genreIds, tmdbData, isFetching, localMovies]);
+}
+
+/**
+ * Pre-fetch series for multiple genres at once
+ * Returns a Map of genreId -> { items, loading }
+ */
+export function useMultipleSeriesByGenre(
+  accessToken: string | null,
+  genreIds: number[]
+): Map<number, { items: StoredSeries[]; loading: boolean }> {
+  const [tmdbData, setTmdbData] = useState<Map<number, TmdbTvResult[]>>(new Map());
+  const [fetchedGenreIds, setFetchedGenreIds] = useState<string>('');
+
+  // Track which genreIds we've fetched (as string for easy comparison)
+  const genreIdsKey = genreIds.join(',');
+
+  // Fetch all genres in parallel
+  useEffect(() => {
+    if (!accessToken || genreIds.length === 0) return;
+
+    // Fetch each genre in parallel
+    Promise.all(
+      genreIds.map(async (genreId) => {
+        try {
+          const series = await discoverTvShowsByGenre(accessToken, genreId);
+          return { genreId, series };
+        } catch {
+          return { genreId, series: [] };
+        }
+      })
+    ).then((results) => {
+      const newData = new Map<number, TmdbTvResult[]>();
+      results.forEach(({ genreId, series }) => {
+        newData.set(genreId, series);
+      });
+      setTmdbData(newData);
+      setFetchedGenreIds(genreIdsKey);
+    });
+  }, [accessToken, genreIdsKey]); // genreIdsKey for stable dependency
+
+  // Collect all TMDB IDs for batch local lookup
+  const allTmdbIds = useMemo(() => {
+    const ids: number[] = [];
+    tmdbData.forEach((series) => {
+      series.forEach((s) => ids.push(s.id));
+    });
+    return ids;
+  }, [tmdbData]);
+
+  const localSeries = useSeriesByTmdbIds(allTmdbIds);
+
+  // Build result map
+  // Loading if: fetch not complete OR local lookup not complete
+  const isFetching = fetchedGenreIds !== genreIdsKey;
+
+  return useMemo(() => {
+    const result = new Map<number, { items: StoredSeries[]; loading: boolean }>();
+
+    genreIds.forEach((genreId) => {
+      const tmdbSeries = tmdbData.get(genreId) || [];
+      const isLoading = isFetching || localSeries === undefined;
+
+      if (isLoading) {
+        result.set(genreId, { items: [], loading: true });
+      } else if (tmdbSeries.length === 0) {
+        result.set(genreId, { items: [], loading: false });
+      } else {
+        const tmdbOrder = new Map(tmdbSeries.map((s, i) => [s.id, i]));
+        const items = sortByTmdbOrder(localSeries || [], tmdbOrder);
+        result.set(genreId, { items, loading: false });
+      }
+    });
+
+    return result;
+  }, [genreIds, tmdbData, isFetching, localSeries]);
 }
 
 // ===========================================================================

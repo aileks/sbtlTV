@@ -59,7 +59,6 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
           <img
             src={displayUrl}
             alt={item.name}
-            loading="lazy"
             onLoad={() => setImageLoaded(true)}
             onError={() => setImageError(true)}
             className={imageLoaded ? 'loaded' : ''}

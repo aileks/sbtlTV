@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
+import { Virtuoso } from 'react-virtuoso';
 import { HeroSection } from './vod/HeroSection';
 import { HorizontalCarousel } from './vod/HorizontalCarousel';
-import { GenreCarousel } from './vod/GenreCarousel';
 import { HorizontalCategoryStrip } from './vod/HorizontalCategoryStrip';
 import { VodBrowse } from './vod/VodBrowse';
 import { MovieDetail } from './vod/MovieDetail';
@@ -24,6 +24,8 @@ import {
   useTvGenres,
   useEnabledMovieGenres,
   useEnabledSeriesGenres,
+  useMultipleMoviesByGenre,
+  useMultipleSeriesByGenre,
 } from '../hooks/useTmdbLists';
 import {
   useMoviesCategory,
@@ -36,6 +38,65 @@ import './VodPage.css';
 
 type VodType = 'movie' | 'series';
 type VodItem = StoredMovie | StoredSeries;
+
+// Carousel row type for virtualization (all data pre-fetched)
+type CarouselRow = {
+  key: string;
+  title: string;
+  items: VodItem[];
+  loading?: boolean;
+};
+
+// Context passed to Virtuoso components (must be defined outside render)
+interface HomeVirtuosoContext {
+  type: VodType;
+  tmdbApiKey: string | null;
+  featuredItems: VodItem[];
+  localPopularItems: VodItem[];
+  onItemClick: (item: VodItem) => void;
+  onHeroPlay: (item: VodItem) => void;
+}
+
+// Header component for Virtuoso (defined outside render to prevent remounting)
+const HomeHeader: React.ComponentType<{ context?: HomeVirtuosoContext }> = ({ context }) => {
+  if (!context) return null;
+  const { featuredItems, localPopularItems, type, onHeroPlay, onItemClick, tmdbApiKey } = context;
+  return (
+    <HeroSection
+      items={featuredItems.length > 0 ? featuredItems : localPopularItems.slice(0, 5)}
+      type={type}
+      onPlay={onHeroPlay}
+      onMoreInfo={onItemClick}
+      apiKey={tmdbApiKey}
+    />
+  );
+};
+
+// Item renderer for Virtuoso (defined outside render)
+// All data is pre-fetched, so this just renders the carousel
+const CarouselRowContent = (
+  _index: number,
+  row: CarouselRow,
+  context: HomeVirtuosoContext | undefined
+) => {
+  if (!context) return null;
+  const { type, onItemClick } = context;
+
+  return (
+    <HorizontalCarousel
+      title={row.title}
+      items={row.items}
+      type={type}
+      onItemClick={onItemClick}
+      loading={row.loading}
+    />
+  );
+};
+
+// Stable components object for Virtuoso
+const homeVirtuosoComponents = {
+  Header: HomeHeader,
+};
 
 interface VodPageProps {
   type: VodType;
@@ -119,6 +180,103 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     return genres.filter(g => enabledGenreIds.includes(g.id));
   }, [genres, enabledGenreIds]);
 
+  // Get genre IDs for pre-fetching
+  const genreIdsToFetch = useMemo(
+    () => genresToShow.map(g => g.id),
+    [genresToShow]
+  );
+
+  // Pre-fetch all genre data at once (not lazily per-carousel)
+  // This ensures smooth scrolling - data is ready before carousels render
+  const movieGenreData = useMultipleMoviesByGenre(
+    type === 'movie' ? tmdbApiKey : null,
+    type === 'movie' ? genreIdsToFetch : []
+  );
+  const seriesGenreData = useMultipleSeriesByGenre(
+    type === 'series' ? tmdbApiKey : null,
+    type === 'series' ? genreIdsToFetch : []
+  );
+  const genreData = type === 'movie' ? movieGenreData : seriesGenreData;
+
+  // Determine which items to show in carousels
+  const showTmdbContent = tmdbApiKey && (trendingItems.length > 0 || popularItems.length > 0);
+
+  // Build carousel rows for virtualization
+  // Only includes rows that have content (or are loading)
+  const carouselRows = useMemo((): CarouselRow[] => {
+    const rows: CarouselRow[] = [];
+
+    // Trending
+    if (trendingItems.length > 0 || trendingLoading) {
+      rows.push({
+        key: 'trending',
+        title: 'Trending Now',
+        items: trendingItems,
+        loading: trendingLoading,
+      });
+    }
+
+    // Popular
+    if (popularItems.length > 0 || popularLoading) {
+      rows.push({
+        key: 'popular',
+        title: 'Popular',
+        items: popularItems,
+        loading: popularLoading,
+      });
+    }
+
+    // Top Rated
+    if (topRatedItems.length > 0 || topRatedLoading) {
+      rows.push({
+        key: 'top-rated',
+        title: 'Top Rated',
+        items: topRatedItems,
+        loading: topRatedLoading,
+      });
+    }
+
+    // Now Playing / On The Air
+    if (nowOrOnAirItems.length > 0 || nowOrOnAirLoading) {
+      rows.push({
+        key: 'now-or-onair',
+        title: type === 'movie' ? 'Now Playing' : 'On The Air',
+        items: nowOrOnAirItems,
+        loading: nowOrOnAirLoading,
+      });
+    }
+
+    // Genre carousels - use pre-fetched data
+    for (const genre of genresToShow) {
+      const data = genreData.get(genre.id);
+      rows.push({
+        key: `genre-${genre.id}`,
+        title: genre.name,
+        items: data?.items || [],
+        loading: data?.loading ?? true,
+      });
+    }
+
+    // Fallback: local popular if no TMDB content
+    if (!showTmdbContent && localPopularItems.length > 0) {
+      rows.push({
+        key: 'local-popular',
+        title: 'Popular in Your Library',
+        items: localPopularItems,
+      });
+    }
+
+    return rows;
+  }, [
+    trendingItems, trendingLoading,
+    popularItems, popularLoading,
+    topRatedItems, topRatedLoading,
+    nowOrOnAirItems, nowOrOnAirLoading,
+    genresToShow, genreData,
+    showTmdbContent, localPopularItems,
+    type,
+  ]);
+
   const handleItemClick = useCallback((item: VodItem) => {
     setSelectedItem(item);
   }, []);
@@ -132,6 +290,26 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   const handleCloseDetail = useCallback(() => {
     setSelectedItem(null);
   }, []);
+
+  // Handle hero play button - movies play directly, series open detail
+  const handleHeroPlay = useCallback((item: VodItem) => {
+    if (type === 'movie') {
+      const movie = item as StoredMovie;
+      handlePlay(movie.direct_url, movie.name);
+    } else {
+      setSelectedItem(item);
+    }
+  }, [type, handlePlay]);
+
+  // Memoized context for Virtuoso to prevent unnecessary re-renders
+  const homeVirtuosoContext = useMemo((): HomeVirtuosoContext => ({
+    type,
+    tmdbApiKey,
+    featuredItems,
+    localPopularItems,
+    onItemClick: handleItemClick,
+    onHeroPlay: handleHeroPlay,
+  }), [type, tmdbApiKey, featuredItems, localPopularItems, handleItemClick, handleHeroPlay]);
 
   // Handle category selection - also close detail view
   const handleCategorySelect = useCallback((id: string | null) => {
@@ -167,9 +345,6 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
       window.removeEventListener('popstate', handlePopState);
     };
   }, [selectedItem]);
-
-  // Determine which items to show in carousels
-  const showTmdbContent = tmdbApiKey && (trendingItems.length > 0 || popularItems.length > 0);
 
   // Labels
   const typeLabel = type === 'movie' ? 'Movies' : 'Series';
@@ -214,94 +389,17 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
             onItemClick={handleItemClick}
           />
         ) : (
-          // Home view: Hero + carousels
-          <>
-            {/* Hero section */}
-            <HeroSection
-              items={featuredItems.length > 0 ? featuredItems : localPopularItems.slice(0, 5)}
-              type={type}
-              onPlay={(item) => {
-                if (type === 'movie') {
-                  const movie = item as StoredMovie;
-                  handlePlay(movie.direct_url, movie.name);
-                } else {
-                  // Series needs to navigate to detail to pick episode
-                  setSelectedItem(item);
-                }
-              }}
-              onMoreInfo={(item) => handleItemClick(item)}
-              apiKey={tmdbApiKey}
-            />
-
-            {/* Carousels */}
-            <div className="vod-page__carousels">
-              {/* Trending */}
-              {trendingItems.length > 0 && (
-                <HorizontalCarousel
-                  title="Trending Now"
-                  items={trendingItems}
-                  type={type}
-                  onItemClick={handleItemClick}
-                  loading={trendingLoading}
-                />
-              )}
-
-              {/* Popular */}
-              {popularItems.length > 0 && (
-                <HorizontalCarousel
-                  title="Popular"
-                  items={popularItems}
-                  type={type}
-                  onItemClick={handleItemClick}
-                  loading={popularLoading}
-                />
-              )}
-
-              {/* Top Rated */}
-              {topRatedItems.length > 0 && (
-                <HorizontalCarousel
-                  title="Top Rated"
-                  items={topRatedItems}
-                  type={type}
-                  onItemClick={handleItemClick}
-                  loading={topRatedLoading}
-                />
-              )}
-
-              {/* Now Playing (movies) / On The Air (series) */}
-              {nowOrOnAirItems.length > 0 && (
-                <HorizontalCarousel
-                  title={type === 'movie' ? 'Now Playing' : 'On The Air'}
-                  items={nowOrOnAirItems}
-                  type={type}
-                  onItemClick={handleItemClick}
-                  loading={nowOrOnAirLoading}
-                />
-              )}
-
-              {/* Genre-based carousels */}
-              {genresToShow.map(genre => (
-                <GenreCarousel
-                  key={genre.id}
-                  genreId={genre.id}
-                  genreName={genre.name}
-                  type={type}
-                  tmdbApiKey={tmdbApiKey}
-                  onItemClick={handleItemClick}
-                />
-              ))}
-
-              {/* Fallback: local popular if no TMDB content */}
-              {!showTmdbContent && localPopularItems.length > 0 && (
-                <HorizontalCarousel
-                  title="Popular in Your Library"
-                  items={localPopularItems}
-                  type={type}
-                  onItemClick={handleItemClick}
-                />
-              )}
-            </div>
-          </>
+          // Home view: Hero + virtualized carousels
+          <Virtuoso
+            className="vod-page__home"
+            data={carouselRows}
+            context={homeVirtuosoContext}
+            overscan={200}
+            fixedItemHeight={386}
+            computeItemKey={(_, row) => row.key}
+            components={homeVirtuosoComponents}
+            itemContent={CarouselRowContent}
+          />
         )}
       </main>
 

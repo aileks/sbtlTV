@@ -11,6 +11,7 @@ export interface HorizontalCarouselProps {
   cardSize?: 'small' | 'medium' | 'large';
   loading?: boolean;
   maxItems?: number; // Limit items for performance
+  hidden?: boolean; // Hide but maintain minimal height for Virtuoso
 }
 
 export function HorizontalCarousel({
@@ -21,6 +22,7 @@ export function HorizontalCarousel({
   cardSize = 'medium',
   loading = false,
   maxItems = 20,
+  hidden = false,
 }: HorizontalCarouselProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -70,8 +72,9 @@ export function HorizontalCarousel({
     }
   }, [scroll]);
 
-  if (displayItems.length === 0 && !loading) {
-    return null;
+  // Hidden carousels render a minimal placeholder for Virtuoso
+  if (hidden || (displayItems.length === 0 && !loading)) {
+    return <div className="carousel carousel--empty" aria-hidden="true" />;
   }
 
   return (

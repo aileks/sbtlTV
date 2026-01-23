@@ -33,11 +33,8 @@ export function GenreCarousel({
   const items = type === 'movie' ? movies : series;
   const loading = type === 'movie' ? moviesLoading : seriesLoading;
 
-  // Don't render if no items
-  if (!loading && items.length === 0) {
-    return null;
-  }
-
+  // Always render carousel - Virtuoso requires non-zero height items
+  // Empty carousels will show loading state briefly, then hide via CSS
   return (
     <HorizontalCarousel
       title={genreName}
@@ -45,6 +42,7 @@ export function GenreCarousel({
       type={type}
       onItemClick={onItemClick}
       loading={loading}
+      hidden={!loading && items.length === 0}
     />
   );
 }
