@@ -18,6 +18,8 @@ function App() {
   const [playing, setPlaying] = useState(false);
   const [volume, setVolume] = useState(100);
   const [muted, setMuted] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [currentChannel, setCurrentChannel] = useState<StoredChannel | null>(null);
 
@@ -36,6 +38,9 @@ function App() {
 
   // Track volume slider dragging to ignore mpv updates during drag
   const volumeDraggingRef = useRef(false);
+
+  // Track seeking to prevent position flickering during scrub
+  const seekingRef = useRef(false);
 
   // Track if mouse is hovering over controls (prevents auto-hide)
   const controlsHoveredRef = useRef(false);
@@ -59,6 +64,13 @@ function App() {
         setVolume(status.volume);
       }
       if (status.muted !== undefined) setMuted(status.muted);
+      // Skip position updates while user is seeking (prevents flickering)
+      if (status.position !== undefined && !seekingRef.current) {
+        setPosition(status.position);
+      }
+      if (status.duration !== undefined) {
+        setDuration(status.duration);
+      }
     });
 
     window.mpv.onError((err) => {
@@ -129,6 +141,15 @@ function App() {
     await window.mpv.stop();
     setPlaying(false);
     setCurrentChannel(null);
+  };
+
+  const handleSeek = async (seconds: number) => {
+    if (!window.mpv) return;
+    seekingRef.current = true;
+    setPosition(seconds); // Optimistic update
+    await window.mpv.seek(seconds);
+    // Brief delay before accepting mpv updates again
+    setTimeout(() => { seekingRef.current = false; }, 200);
   };
 
   // Play a channel
@@ -283,10 +304,14 @@ function App() {
         muted={muted}
         volume={volume}
         mpvReady={mpvReady}
+        position={position}
+        duration={duration}
+        isVod={currentChannel?.stream_id === 'vod'}
         onTogglePlay={handleTogglePlay}
         onStop={handleStop}
         onToggleMute={handleToggleMute}
         onVolumeChange={handleVolumeChange}
+        onSeek={handleSeek}
         onVolumeDragStart={() => { volumeDraggingRef.current = true; }}
         onVolumeDragEnd={() => { volumeDraggingRef.current = false; }}
         onMouseEnter={() => { controlsHoveredRef.current = true; }}

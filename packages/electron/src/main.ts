@@ -244,6 +244,7 @@ async function connectToMpvSocket(): Promise<void> {
       sendMpvCommand('observe_property', [1, 'pause']);
       sendMpvCommand('observe_property', [2, 'volume']);
       sendMpvCommand('observe_property', [3, 'mute']);
+      sendMpvCommand('observe_property', [4, 'time-pos']);
       sendMpvCommand('observe_property', [5, 'duration']);
 
       resolve();
@@ -440,7 +441,7 @@ ipcMain.handle('mpv-toggle-mute', async () => {
 ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
   if (!mpvSocket) return { error: 'mpv not initialized' };
   try {
-    await sendMpvCommand('seek', [seconds, 'relative']);
+    await sendMpvCommand('seek', [seconds, 'absolute']);
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Unknown error' };
