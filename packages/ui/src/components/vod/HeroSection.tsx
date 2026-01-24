@@ -62,8 +62,9 @@ export function HeroSection({
 
   const currentItem = items[currentIndex];
 
-  // Lazy-load plot for current item
-  const { plot: lazyPlot } = useLazyPlot(currentItem, apiKey);
+  // Lazy-load plot and genre for current item
+  const { plot: lazyPlot, genre: lazyGenre } = useLazyPlot(currentItem, apiKey);
+  const displayGenre = currentItem?.genre || lazyGenre;
 
   // Auto-rotate through items
   useEffect(() => {
@@ -149,8 +150,8 @@ export function HeroSection({
                 {rating.toFixed(1)}
               </span>
             )}
-            {currentItem.genre && (
-              <span className="hero__genre">{currentItem.genre.split(',')[0]}</span>
+            {displayGenre && (
+              <span className="hero__genre">{displayGenre.split(',')[0]}</span>
             )}
           </div>
 
