@@ -1,7 +1,7 @@
 import { db, clearSourceData, clearVodData, type SourceMeta, type StoredProgram, type StoredMovie, type StoredSeries, type StoredEpisode, type VodCategory } from './index';
 import { fetchAndParseM3U, XtreamClient } from '@sbtltv/local-adapter';
 import type { Source, Channel, Category, Movie, Series } from '@sbtltv/core';
-import { getMovieExports, getTvExports, findBestMatch } from '../services/tmdb-exports';
+import { getEnrichedMovieExports, getEnrichedTvExports, findBestMatch, extractMatchParams } from '../services/tmdb-exports';
 
 export interface SyncResult {
   success: boolean;
@@ -480,11 +480,12 @@ export async function syncSeriesEpisodes(source: Source, seriesId: string): Prom
 }
 
 // Match movies against TMDB exports (no API calls!)
+// Uses enriched data with year info for more accurate matching
 // Only matches items that haven't been attempted yet (incremental)
 async function matchMoviesWithTmdb(sourceId: string): Promise<number> {
   try {
-    console.log('[TMDB Match] Starting movie matching...');
-    const exports = await getMovieExports();
+    console.log('[TMDB Match] Starting movie matching with year-aware lookup...');
+    const exports = await getEnrichedMovieExports();
 
     // Get only movies that haven't been matched AND haven't been attempted
     const movies = await db.vodMovies
@@ -501,6 +502,7 @@ async function matchMoviesWithTmdb(sourceId: string): Promise<number> {
     console.log(`[TMDB Match] Matching ${movies.length} new movies...`);
 
     let matched = 0;
+    let yearMatched = 0;
     const BATCH_SIZE = 500;
     const now = new Date();
 
@@ -509,8 +511,15 @@ async function matchMoviesWithTmdb(sourceId: string): Promise<number> {
       const updates: { key: string; changes: Partial<StoredMovie> }[] = [];
 
       for (const movie of batch) {
-        const match = findBestMatch(exports, movie.name);
+        // Extract title and year from movie data
+        const { title, year } = extractMatchParams(movie);
+        const match = findBestMatch(exports, title, year);
+
         if (match) {
+          // Track if we matched on year specifically
+          if (year && match.year === year) {
+            yearMatched++;
+          }
           updates.push({
             key: movie.stream_id,
             changes: {
@@ -543,7 +552,7 @@ async function matchMoviesWithTmdb(sourceId: string): Promise<number> {
       console.log(`[TMDB Match] Progress: ${Math.min(i + BATCH_SIZE, movies.length)}/${movies.length}`);
     }
 
-    console.log(`[TMDB Match] Matched ${matched}/${movies.length} movies`);
+    console.log(`[TMDB Match] Matched ${matched}/${movies.length} movies (${yearMatched} with exact year match)`);
     return matched;
   } catch (error) {
     console.error('[TMDB Match] Movie matching failed:', error);
@@ -552,11 +561,12 @@ async function matchMoviesWithTmdb(sourceId: string): Promise<number> {
 }
 
 // Match series against TMDB exports (no API calls!)
+// Uses enriched data with year info for more accurate matching
 // Only matches items that haven't been attempted yet (incremental)
 async function matchSeriesWithTmdb(sourceId: string): Promise<number> {
   try {
-    console.log('[TMDB Match] Starting series matching...');
-    const exports = await getTvExports();
+    console.log('[TMDB Match] Starting series matching with year-aware lookup...');
+    const exports = await getEnrichedTvExports();
 
     // Get only series that haven't been matched AND haven't been attempted
     const series = await db.vodSeries
@@ -573,6 +583,7 @@ async function matchSeriesWithTmdb(sourceId: string): Promise<number> {
     console.log(`[TMDB Match] Matching ${series.length} new series...`);
 
     let matched = 0;
+    let yearMatched = 0;
     const BATCH_SIZE = 500;
     const now = new Date();
 
@@ -581,8 +592,15 @@ async function matchSeriesWithTmdb(sourceId: string): Promise<number> {
       const updates: { key: string; changes: Partial<StoredSeries> }[] = [];
 
       for (const s of batch) {
-        const match = findBestMatch(exports, s.name);
+        // Extract title and year from series data
+        const { title, year } = extractMatchParams(s);
+        const match = findBestMatch(exports, title, year);
+
         if (match) {
+          // Track if we matched on year specifically
+          if (year && match.year === year) {
+            yearMatched++;
+          }
           updates.push({
             key: s.series_id,
             changes: {
@@ -615,7 +633,7 @@ async function matchSeriesWithTmdb(sourceId: string): Promise<number> {
       console.log(`[TMDB Match] Progress: ${Math.min(i + BATCH_SIZE, series.length)}/${series.length}`);
     }
 
-    console.log(`[TMDB Match] Matched ${matched}/${series.length} series`);
+    console.log(`[TMDB Match] Matched ${matched}/${series.length} series (${yearMatched} with exact year match)`);
     return matched;
   } catch (error) {
     console.error('[TMDB Match] Series matching failed:', error);

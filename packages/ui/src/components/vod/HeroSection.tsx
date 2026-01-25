@@ -113,11 +113,15 @@ export function HeroSection({
     );
   }
 
-  // Get year
-  const year = currentItem.release_date?.slice(0, 4);
+  // Use clean title if available, otherwise fall back to name
+  const displayTitle = currentItem.title || currentItem.name;
 
-  // Get rating
-  const rating = currentItem.rating ? parseFloat(currentItem.rating) : null;
+  // Use year field if available, otherwise extract from release_date
+  const year = currentItem.year || currentItem.release_date?.slice(0, 4);
+
+  // Rating - only show if it's a meaningful value (not 0, not NaN)
+  const parsedRating = currentItem.rating ? parseFloat(currentItem.rating) : NaN;
+  const rating = !isNaN(parsedRating) && parsedRating > 0 ? parsedRating : null;
 
   return (
     <section className="hero">
@@ -138,11 +142,11 @@ export function HeroSection({
       <div className={`hero__content ${isContentTransitioning ? 'hero__content--transitioning' : ''}`}>
         <div className="hero__info">
           <span className="hero__type">{type === 'movie' ? 'Movie' : 'Series'}</span>
-          <h1 className="hero__title">{currentItem.name}</h1>
+          <h1 className="hero__title">{displayTitle}</h1>
 
           <div className="hero__meta">
             {year && <span className="hero__year">{year}</span>}
-            {rating && rating > 0 && (
+            {rating && (
               <span className="hero__rating">
                 <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
                   <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />

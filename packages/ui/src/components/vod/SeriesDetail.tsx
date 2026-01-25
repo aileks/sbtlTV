@@ -81,9 +81,15 @@ export function SeriesDetail({ series, onClose, onPlayEpisode, apiKey }: SeriesD
       ? getTmdbImageUrl(series.backdrop_path, TMDB_POSTER_SIZES.medium)
       : null);
 
-  // Parse metadata
-  const year = series.release_date?.slice(0, 4);
-  const rating = series.rating ? parseFloat(series.rating) : null;
+  // Use clean title if available, otherwise fall back to name
+  const displayTitle = series.title || series.name;
+
+  // Use year field if available, otherwise extract from release_date
+  const year = series.year || series.release_date?.slice(0, 4);
+
+  // Rating - only show if it's a meaningful value (not 0, not NaN)
+  const parsedRating = series.rating ? parseFloat(series.rating) : NaN;
+  const rating = !isNaN(parsedRating) && parsedRating > 0 ? parsedRating : null;
   const genreSource = series.genre || lazyGenre;
   const genres = genreSource?.split(',').map((g) => g.trim()).filter(Boolean) ?? [];
 
@@ -128,11 +134,11 @@ export function SeriesDetail({ series, onClose, onPlayEpisode, apiKey }: SeriesD
 
           {/* Info */}
           <div className="series-detail__info">
-            <h1 className="series-detail__title">{series.name}</h1>
+            <h1 className="series-detail__title">{displayTitle}</h1>
 
             <div className="series-detail__meta">
               {year && <span className="series-detail__year">{year}</span>}
-              {rating && rating > 0 && (
+              {rating && (
                 <span className="series-detail__rating">
                   <svg viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />

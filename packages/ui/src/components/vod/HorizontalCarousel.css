@@ -4,7 +4,7 @@
   margin-bottom: 0;
   padding-bottom: 16px;
   /* Fixed height for Virtuoso - all rows must be same size */
-  height: 386px;
+  height: 366px;
   box-sizing: border-box;
   overflow: hidden;
   display: flex;
@@ -13,7 +13,7 @@
 
 /* Empty/hidden carousel - same height as normal for Virtuoso fixedItemHeight */
 .carousel--empty {
-  height: 386px;
+  height: 366px;
   padding: 0;
   overflow: hidden;
 }

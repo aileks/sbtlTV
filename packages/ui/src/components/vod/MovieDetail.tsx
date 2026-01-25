@@ -59,9 +59,15 @@ export function MovieDetail({ movie, onClose, onPlay, apiKey }: MovieDetailProps
       ? getTmdbImageUrl(movie.backdrop_path, TMDB_POSTER_SIZES.medium)
       : null);
 
-  // Parse metadata
-  const year = movie.release_date?.slice(0, 4);
-  const rating = movie.rating ? parseFloat(movie.rating) : null;
+  // Use clean title if available, otherwise fall back to name
+  const displayTitle = movie.title || movie.name;
+
+  // Use year field if available, otherwise extract from release_date
+  const year = movie.year || movie.release_date?.slice(0, 4);
+
+  // Rating - only show if it's a meaningful value (not 0, not NaN)
+  const parsedRating = movie.rating ? parseFloat(movie.rating) : NaN;
+  const rating = !isNaN(parsedRating) && parsedRating > 0 ? parsedRating : null;
   const genreSource = movie.genre || lazyGenre;
   const genres = genreSource?.split(',').map((g) => g.trim()).filter(Boolean) ?? [];
   const duration = movie.duration && movie.duration > 0
@@ -106,11 +112,11 @@ export function MovieDetail({ movie, onClose, onPlay, apiKey }: MovieDetailProps
 
           {/* Info */}
           <div className="movie-detail__info">
-            <h1 className="movie-detail__title">{movie.name}</h1>
+            <h1 className="movie-detail__title">{displayTitle}</h1>
 
             <div className="movie-detail__meta">
               {year && <span className="movie-detail__year">{year}</span>}
-              {rating && rating > 0 && (
+              {rating && (
                 <span className="movie-detail__rating">
                   <svg viewBox="0 0 24 24" fill="currentColor">
                     <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />

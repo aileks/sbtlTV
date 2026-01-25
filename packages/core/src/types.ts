@@ -91,6 +91,8 @@ export interface GuideRow {
 export interface Movie {
   stream_id: string;
   name: string;
+  title?: string;         // Clean title without year (e.g., "40 Pounds of Trouble")
+  year?: string;          // Release year (e.g., "1962")
   stream_icon: string;
   category_ids: string[];
   direct_url: string;
@@ -112,6 +114,8 @@ export interface Movie {
 export interface Series {
   series_id: string;
   name: string;
+  title?: string;         // Clean title without year
+  year?: string;          // First air year
   cover: string;
   category_ids: string[];
   source_id: string;
