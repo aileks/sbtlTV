@@ -10,21 +10,13 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { db, type StoredMovie, type StoredSeries } from '../db';
+import { db, type StoredMovie } from '../db';
 import { getMovieCredits, getTvShowCredits } from '../services/tmdb';
-
-type MediaItem = StoredMovie | StoredSeries;
+import { type MediaItem, isMovie } from '../types/media';
 
 interface Credits {
   cast: string | null;
   director: string | null;
-}
-
-/**
- * Check if item is a movie (has stream_id) vs series (has series_id)
- */
-function isMovie(item: MediaItem): item is StoredMovie {
-  return 'stream_id' in item && !('series_id' in item);
 }
 
 /**
@@ -40,7 +32,7 @@ export function useLazyCredits(
 ): Credits {
   // Return existing credits if already have them
   const hasCast = item?.cast && item.cast.trim().length > 0;
-  const hasDirector = isMovie(item!) && item?.director && item.director.trim().length > 0;
+  const hasDirector = item && isMovie(item) && !!item.director?.trim();
 
   const [fetchedCredits, setFetchedCredits] = useState<Credits>({
     cast: null,
@@ -153,7 +145,7 @@ export function useLazyCredits(
   // Return existing credits or fetched credits
   return {
     cast: (hasCast ? item?.cast : fetchedCredits.cast) ?? null,
-    director: (hasDirector && isMovie(item!) ? (item as StoredMovie).director : fetchedCredits.director) ?? null,
+    director: (hasDirector && item && isMovie(item) ? item.director : fetchedCredits.director) ?? null,
   };
 }
 

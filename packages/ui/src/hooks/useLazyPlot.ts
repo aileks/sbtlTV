@@ -12,19 +12,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { db, type StoredMovie, type StoredSeries } from '../db';
 import { getMovieDetails, getTvShowDetails } from '../services/tmdb';
-
-type MediaItem = StoredMovie | StoredSeries;
+import { type MediaItem, isMovie } from '../types/media';
 
 interface LazyDetails {
   plot: string | null;
   genre: string | null;
-}
-
-/**
- * Check if item is a movie (has stream_id) vs series (has series_id)
- */
-function isMovie(item: MediaItem): item is StoredMovie {
-  return 'stream_id' in item && !('series_id' in item);
 }
 
 /**

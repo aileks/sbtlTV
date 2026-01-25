@@ -1,16 +1,13 @@
 import { HorizontalCarousel } from './HorizontalCarousel';
 import { useMoviesByGenre, useSeriesByGenre } from '../../hooks/useTmdbLists';
-import type { StoredMovie, StoredSeries } from '../../db';
-
-type VodType = 'movie' | 'series';
-type VodItem = StoredMovie | StoredSeries;
+import { type MediaItem, type VodType } from '../../types/media';
 
 interface GenreCarouselProps {
   genreId: number;
   genreName: string;
   type: VodType;
   tmdbApiKey: string | null;
-  onItemClick: (item: VodItem) => void;
+  onItemClick: (item: MediaItem) => void;
 }
 
 export function GenreCarousel({

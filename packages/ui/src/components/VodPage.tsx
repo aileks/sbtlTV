@@ -34,16 +34,14 @@ import {
   useSetSeriesCategory,
 } from '../stores/uiStore';
 import type { StoredMovie, StoredSeries } from '../db';
+import { type MediaItem, type VodType } from '../types/media';
 import './VodPage.css';
-
-type VodType = 'movie' | 'series';
-type VodItem = StoredMovie | StoredSeries;
 
 // Carousel row type for virtualization (all data pre-fetched)
 type CarouselRow = {
   key: string;
   title: string;
-  items: VodItem[];
+  items: MediaItem[];
   loading?: boolean;
 };
 
@@ -51,11 +49,11 @@ type CarouselRow = {
 interface HomeVirtuosoContext {
   type: VodType;
   tmdbApiKey: string | null;
-  featuredItems: VodItem[];
-  localPopularItems: VodItem[];
+  featuredItems: MediaItem[];
+  localPopularItems: MediaItem[];
   heroLoading: boolean;
-  onItemClick: (item: VodItem) => void;
-  onHeroPlay: (item: VodItem) => void;
+  onItemClick: (item: MediaItem) => void;
+  onHeroPlay: (item: MediaItem) => void;
 }
 
 // Header component for Virtuoso (defined outside render to prevent remounting)
@@ -107,7 +105,7 @@ interface VodPageProps {
 }
 
 export function VodPage({ type, onPlay, onClose }: VodPageProps) {
-  const [selectedItem, setSelectedItem] = useState<VodItem | null>(null);
+  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Category state - use the appropriate store based on type
@@ -271,7 +269,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     type,
   ]);
 
-  const handleItemClick = useCallback((item: VodItem) => {
+  const handleItemClick = useCallback((item: MediaItem) => {
     setSelectedItem(item);
   }, []);
 
@@ -286,7 +284,7 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   }, []);
 
   // Handle hero play button - movies play directly, series open detail
-  const handleHeroPlay = useCallback((item: VodItem) => {
+  const handleHeroPlay = useCallback((item: MediaItem) => {
     if (type === 'movie') {
       const movie = item as StoredMovie;
       handlePlay(movie.direct_url, movie.name);

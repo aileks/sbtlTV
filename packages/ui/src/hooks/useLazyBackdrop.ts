@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { db, type StoredMovie, type StoredSeries } from '../db';
+import { db } from '../db';
 import {
   getMovieDetails,
   getTvShowDetails,
@@ -19,15 +19,7 @@ import {
 } from '../services/tmdb';
 import { getRpdbBackdropUrl } from '../services/rpdb';
 import { useRpdbSettings } from './useRpdbSettings';
-
-type MediaItem = StoredMovie | StoredSeries;
-
-/**
- * Check if item is a movie (has stream_id) vs series (has series_id)
- */
-function isMovie(item: MediaItem): item is StoredMovie {
-  return 'stream_id' in item && !('series_id' in item);
-}
+import { type MediaItem, isMovie } from '../types/media';
 
 /**
  * Lazy-load backdrop for a movie or series
