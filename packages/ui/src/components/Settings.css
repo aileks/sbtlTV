@@ -722,6 +722,26 @@
   color: rgba(255, 255, 255, 0.8);
 }
 
+.genre-item-count {
+  margin-left: 4px;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.genre-checkbox--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.genre-checkbox--disabled:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.genre-checkbox--disabled input[type='checkbox'] {
+  cursor: not-allowed;
+}
+
 /* Loading State */
 .loading-state {
   text-align: center;

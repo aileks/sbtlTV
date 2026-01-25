@@ -174,9 +174,9 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
   // No hard limit - user controls via Settings which genres to show
   const genresToShow = useMemo(() => {
     if (!genres.length) return [];
-    // If no enabled genres defined yet (undefined), show first 6 as default
+    // If no enabled genres defined yet (undefined), show all genres
     if (enabledGenreIds === undefined) {
-      return genres.slice(0, 6);
+      return genres;
     }
     // Show all enabled genres (user chose these in Settings)
     return genres.filter(g => enabledGenreIds.includes(g.id));
@@ -199,9 +199,6 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     type === 'series' ? genreIdsToFetch : []
   );
   const genreData = type === 'movie' ? movieGenreData : seriesGenreData;
-
-  // Determine which items to show in carousels
-  const showTmdbContent = tmdbApiKey && (trendingItems.length > 0 || popularItems.length > 0);
 
   // Build carousel rows for virtualization
   // Only includes rows that have content (or are loading)
@@ -248,24 +245,20 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
       });
     }
 
-    // Genre carousels - use pre-fetched data
+    // Genre carousels - use pre-fetched data (only if has content or still loading)
     for (const genre of genresToShow) {
       const data = genreData.get(genre.id);
-      rows.push({
-        key: `genre-${genre.id}`,
-        title: genre.name,
-        items: data?.items || [],
-        loading: data?.loading ?? true,
-      });
-    }
-
-    // Fallback: local popular if no TMDB content
-    if (!showTmdbContent && localPopularItems.length > 0) {
-      rows.push({
-        key: 'local-popular',
-        title: 'Popular in Your Library',
-        items: localPopularItems,
-      });
+      const items = data?.items || [];
+      const loading = data?.loading ?? true;
+      // Only add row if it has content or is still loading
+      if (items.length > 0 || loading) {
+        rows.push({
+          key: `genre-${genre.id}`,
+          title: genre.name,
+          items,
+          loading,
+        });
+      }
     }
 
     return rows;
@@ -275,7 +268,6 @@ export function VodPage({ type, onPlay, onClose }: VodPageProps) {
     topRatedItems, topRatedLoading,
     nowOrOnAirItems, nowOrOnAirLoading,
     genresToShow, genreData,
-    showTmdbContent, localPopularItems,
     type,
   ]);
 

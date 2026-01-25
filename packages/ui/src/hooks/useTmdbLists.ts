@@ -30,6 +30,8 @@ import {
   getTvGenresWithCache,
   discoverMoviesByGenreWithCache,
   discoverTvShowsByGenreWithCache,
+  getCachedMovieGenreCounts,
+  getCachedTvGenreCounts,
   type TmdbMovieResult,
   type TmdbTvResult,
   type TmdbGenre,
@@ -421,6 +423,58 @@ export function useTvGenres(accessToken: string | null) {
   }, [accessToken]);
 
   return { genres, loading };
+}
+
+/**
+ * Get cached movie counts per genre (for settings UI)
+ * Used to show which genres have content in cache when no API key
+ */
+export function useCachedMovieGenreCounts(hasApiKey: boolean) {
+  const [counts, setCounts] = useState<Map<number, number>>(new Map());
+  const [loading, setLoading] = useState(!hasApiKey);
+
+  useEffect(() => {
+    // Only fetch counts when no API key (cache mode)
+    if (hasApiKey) {
+      setCounts(new Map());
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    getCachedMovieGenreCounts()
+      .then(setCounts)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [hasApiKey]);
+
+  return { counts, loading };
+}
+
+/**
+ * Get cached TV show counts per genre (for settings UI)
+ * Used to show which genres have content in cache when no API key
+ */
+export function useCachedTvGenreCounts(hasApiKey: boolean) {
+  const [counts, setCounts] = useState<Map<number, number>>(new Map());
+  const [loading, setLoading] = useState(!hasApiKey);
+
+  useEffect(() => {
+    // Only fetch counts when no API key (cache mode)
+    if (hasApiKey) {
+      setCounts(new Map());
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    getCachedTvGenreCounts()
+      .then(setCounts)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [hasApiKey]);
+
+  return { counts, loading };
 }
 
 // ===========================================================================

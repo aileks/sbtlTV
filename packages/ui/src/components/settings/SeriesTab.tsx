@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { useTvGenres } from '../../hooks/useTmdbLists';
+import { useEffect, useMemo } from 'react';
+import { useTvGenres, useMultipleSeriesByGenre } from '../../hooks/useTmdbLists';
 
 interface SeriesTabProps {
   tmdbApiKey: string | null;
@@ -14,17 +14,40 @@ export function SeriesTab({
 }: SeriesTabProps) {
   const { genres, loading } = useTvGenres(tmdbApiKey);
 
-  // Initialize with all genres enabled if undefined
-  useEffect(() => {
-    if (enabledGenres === undefined && genres.length > 0) {
-      onEnabledGenresChange(genres.map(g => g.id));
-    }
-  }, [genres, enabledGenres, onEnabledGenresChange]);
+  // Get all genre IDs to check availability
+  const allGenreIds = useMemo(() => genres.map(g => g.id), [genres]);
 
-  const isAllSelected = enabledGenres && genres.length > 0 && enabledGenres.length === genres.length;
+  // Fetch actual matched content per genre from local library
+  const genreData = useMultipleSeriesByGenre(tmdbApiKey, allGenreIds);
+
+  // Check if any genre is still loading
+  const countsLoading = Array.from(genreData.values()).some(d => d.loading);
+
+  // Check if a genre has content in local library
+  const hasContent = (genreId: number) => {
+    const data = genreData.get(genreId);
+    return data ? data.items.length > 0 : false;
+  };
+
+  // Get available genres (ones with content in local library)
+  const availableGenreIds = useMemo(() =>
+    genres.filter(g => hasContent(g.id)).map(g => g.id),
+    [genres, genreData]
+  );
+
+  // Initialize with only genres that have content
+  useEffect(() => {
+    if (enabledGenres === undefined && genres.length > 0 && !countsLoading && availableGenreIds.length > 0) {
+      onEnabledGenresChange(availableGenreIds);
+    }
+  }, [genres, enabledGenres, onEnabledGenresChange, availableGenreIds, countsLoading]);
+
+  const isAllSelected = enabledGenres && availableGenreIds.length > 0 &&
+    availableGenreIds.every(id => enabledGenres.includes(id));
   const isNoneSelected = !enabledGenres || enabledGenres.length === 0;
 
   function handleToggleGenre(genreId: number) {
+    if (!hasContent(genreId)) return; // Don't allow toggling unavailable genres
     const current = enabledGenres || [];
     const newEnabled = current.includes(genreId)
       ? current.filter(id => id !== genreId)
@@ -34,9 +57,8 @@ export function SeriesTab({
   }
 
   function handleSelectAll() {
-    const allIds = genres.map(g => g.id);
-    onEnabledGenresChange(allIds);
-    saveToStorage(allIds);
+    onEnabledGenresChange(availableGenreIds);
+    saveToStorage(availableGenreIds);
   }
 
   function handleDeselectAll() {
@@ -61,7 +83,7 @@ export function SeriesTab({
           Each selected genre will appear as a Netflix-style row.
         </p>
 
-        {loading ? (
+        {loading || countsLoading ? (
           <div className="loading-state">Loading genres...</div>
         ) : genres.length === 0 ? (
           <div className="empty-state">
@@ -88,24 +110,37 @@ export function SeriesTab({
                 Deselect All
               </button>
               <span className="genre-count">
-                {enabledGenres?.length || 0} of {genres.length} selected
+                {enabledGenres?.length || 0} of {availableGenreIds.length} selected
               </span>
             </div>
 
             <div className="genre-grid-container">
               <div className="genre-grid">
-                {genres.map(genre => (
-                  <label key={genre.id} className="genre-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={enabledGenres?.includes(genre.id) ?? true}
-                      onChange={() => handleToggleGenre(genre.id)}
-                    />
-                    <span className="genre-name">{genre.name}</span>
-                  </label>
-                ))}
+                {genres.map(genre => {
+                  const available = hasContent(genre.id);
+                  return (
+                    <label
+                      key={genre.id}
+                      className={`genre-checkbox ${!available ? 'genre-checkbox--disabled' : ''}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={available && (enabledGenres?.includes(genre.id) ?? true)}
+                        onChange={() => handleToggleGenre(genre.id)}
+                        disabled={!available}
+                      />
+                      <span className="genre-name">{genre.name}</span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
+
+            {!tmdbApiKey && (
+              <p className="settings-disclaimer">
+                Add a TMDB access token for more genre options.
+              </p>
+            )}
           </>
         )}
       </div>

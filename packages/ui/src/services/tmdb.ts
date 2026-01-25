@@ -593,3 +593,75 @@ export async function discoverTvShowsByGenreWithCache(
     .filter((s) => s.genre_ids?.includes(genreId))
     .sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
 }
+
+/**
+ * Get count of cached movies per genre (for showing availability in settings)
+ * Returns a Map of genreId -> count
+ */
+export async function getCachedMovieGenreCounts(): Promise<Map<number, number>> {
+  const cache = await fetchCachedTmdbData();
+  if (!cache) return new Map();
+
+  // Collect all movies from cache lists, dedupe by ID
+  const allMovies = [
+    ...(cache.movies.trending_day || []),
+    ...(cache.movies.trending_week || []),
+    ...(cache.movies.popular || []),
+    ...(cache.movies.top_rated || []),
+    ...(cache.movies.now_playing || []),
+    ...(cache.movies.upcoming || []),
+  ];
+
+  const seen = new Set<number>();
+  const uniqueMovies = allMovies.filter((m) => {
+    if (seen.has(m.id)) return false;
+    seen.add(m.id);
+    return true;
+  });
+
+  // Count movies per genre
+  const counts = new Map<number, number>();
+  uniqueMovies.forEach((m) => {
+    m.genre_ids?.forEach((genreId) => {
+      counts.set(genreId, (counts.get(genreId) || 0) + 1);
+    });
+  });
+
+  return counts;
+}
+
+/**
+ * Get count of cached TV shows per genre (for showing availability in settings)
+ * Returns a Map of genreId -> count
+ */
+export async function getCachedTvGenreCounts(): Promise<Map<number, number>> {
+  const cache = await fetchCachedTmdbData();
+  if (!cache) return new Map();
+
+  // Collect all TV shows from cache lists, dedupe by ID
+  const allTvShows = [
+    ...(cache.tv.trending_day || []),
+    ...(cache.tv.trending_week || []),
+    ...(cache.tv.popular || []),
+    ...(cache.tv.top_rated || []),
+    ...(cache.tv.on_the_air || []),
+    ...(cache.tv.airing_today || []),
+  ];
+
+  const seen = new Set<number>();
+  const uniqueTvShows = allTvShows.filter((s) => {
+    if (seen.has(s.id)) return false;
+    seen.add(s.id);
+    return true;
+  });
+
+  // Count TV shows per genre
+  const counts = new Map<number, number>();
+  uniqueTvShows.forEach((s) => {
+    s.genre_ids?.forEach((genreId) => {
+      counts.set(genreId, (counts.get(genreId) || 0) + 1);
+    });
+  });
+
+  return counts;
+}

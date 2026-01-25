@@ -40,7 +40,7 @@ export function TmdbTab({
         </div>
 
         <p className="section-description">
-          Basic TMDB integration is automatic. An API key enables enhancements like
+          Basic TMDB integration is automatic. An Access Token enables enhancements like
           filling in missing metadata from your provider and higher quality backdrop images.
           Use the token labeled "API Read Access Token"{' '}
           <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer" className="tmdb-link">
