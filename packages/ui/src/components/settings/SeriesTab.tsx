@@ -49,22 +49,6 @@ export function SeriesTab({
     await window.storage.updateSettings({ seriesGenresEnabled: genreIds });
   }
 
-  if (!tmdbApiKey) {
-    return (
-      <div className="settings-tab-content">
-        <div className="settings-section">
-          <div className="section-header">
-            <h3>Series Genre Carousels</h3>
-          </div>
-          <div className="empty-state">
-            <p>TMDB API key required</p>
-            <p className="hint">Add a TMDB API key in the TMDB tab to configure genre carousels</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="settings-tab-content">
       <div className="settings-section">
@@ -82,7 +66,7 @@ export function SeriesTab({
         ) : genres.length === 0 ? (
           <div className="empty-state">
             <p>No genres available</p>
-            <p className="hint">Check your TMDB API key configuration</p>
+            <p className="hint">Unable to load genres from cache</p>
           </div>
         ) : (
           <>

@@ -28,9 +28,8 @@ import {
   getAiringTodayTvShowsWithCache,
   getMovieGenresWithCache,
   getTvGenresWithCache,
-  // Direct API functions (require token)
-  discoverMoviesByGenre,
-  discoverTvShowsByGenre,
+  discoverMoviesByGenreWithCache,
+  discoverTvShowsByGenreWithCache,
   type TmdbMovieResult,
   type TmdbTvResult,
   type TmdbGenre,
@@ -271,21 +270,21 @@ export function useLocalPopularMovies(limit = 20) {
 }
 
 /**
- * Get movies by genre (requires access token for discover API)
+ * Get movies by genre (uses cache fallback when no access token)
  */
 export function useMoviesByGenre(accessToken: string | null, genreId: number | null) {
   const [tmdbMovies, setTmdbMovies] = useState<TmdbMovieResult[]>([]);
-  // Start loading=true if we have params - prevents brief "empty" flash before useEffect
-  const [loading, setLoading] = useState(!!accessToken && !!genreId);
+  // Start loading=true if we have genreId - prevents brief "empty" flash before useEffect
+  const [loading, setLoading] = useState(!!genreId);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!accessToken || !genreId) return;
+    if (!genreId) return;
 
     setLoading(true);
     setError(null);
 
-    discoverMoviesByGenre(accessToken, genreId)
+    discoverMoviesByGenreWithCache(accessToken, genreId)
       .then(setTmdbMovies)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -354,21 +353,21 @@ export function useLocalPopularSeries(limit = 20) {
 }
 
 /**
- * Get series by genre (requires access token for discover API)
+ * Get series by genre (uses cache fallback when no access token)
  */
 export function useSeriesByGenre(accessToken: string | null, genreId: number | null) {
   const [tmdbSeries, setTmdbSeries] = useState<TmdbTvResult[]>([]);
-  // Start loading=true if we have params - prevents brief "empty" flash before useEffect
-  const [loading, setLoading] = useState(!!accessToken && !!genreId);
+  // Start loading=true if we have genreId - prevents brief "empty" flash before useEffect
+  const [loading, setLoading] = useState(!!genreId);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!accessToken || !genreId) return;
+    if (!genreId) return;
 
     setLoading(true);
     setError(null);
 
-    discoverTvShowsByGenre(accessToken, genreId)
+    discoverTvShowsByGenreWithCache(accessToken, genreId)
       .then(setTmdbSeries)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -448,15 +447,15 @@ export function useMultipleMoviesByGenre(
   // Track which genreIds we've fetched (as string for easy comparison)
   const genreIdsKey = genreIds.join(',');
 
-  // Fetch all genres in parallel
+  // Fetch all genres in parallel (uses cache fallback when no access token)
   useEffect(() => {
-    if (!accessToken || genreIds.length === 0) return;
+    if (genreIds.length === 0) return;
 
     // Fetch each genre in parallel
     Promise.all(
       genreIds.map(async (genreId) => {
         try {
-          const movies = await discoverMoviesByGenre(accessToken, genreId);
+          const movies = await discoverMoviesByGenreWithCache(accessToken, genreId);
           return { genreId, movies };
         } catch {
           return { genreId, movies: [] };
@@ -523,15 +522,15 @@ export function useMultipleSeriesByGenre(
   // Track which genreIds we've fetched (as string for easy comparison)
   const genreIdsKey = genreIds.join(',');
 
-  // Fetch all genres in parallel
+  // Fetch all genres in parallel (uses cache fallback when no access token)
   useEffect(() => {
-    if (!accessToken || genreIds.length === 0) return;
+    if (genreIds.length === 0) return;
 
     // Fetch each genre in parallel
     Promise.all(
       genreIds.map(async (genreId) => {
         try {
-          const series = await discoverTvShowsByGenre(accessToken, genreId);
+          const series = await discoverTvShowsByGenreWithCache(accessToken, genreId);
           return { genreId, series };
         } catch {
           return { genreId, series: [] };

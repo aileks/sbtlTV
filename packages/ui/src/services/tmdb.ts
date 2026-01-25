@@ -509,3 +509,87 @@ export const getTvGenresWithCache = createCacheFallback(
   (c) => c?.tv.genres,
   getTvGenres
 );
+
+// ===========================================================================
+// Genre Discovery with Cache Fallback
+// ===========================================================================
+
+/**
+ * Get movies by genre, with cache fallback.
+ * - With API key: uses TMDB discover API (more results)
+ * - Without API key: filters cached movies by genre_ids
+ */
+export async function discoverMoviesByGenreWithCache(
+  accessToken: string | null | undefined,
+  genreId: number
+): Promise<TmdbMovieResult[]> {
+  if (accessToken) {
+    return discoverMoviesByGenre(accessToken, genreId);
+  }
+
+  // Fallback: filter cached movies by genre
+  const cache = await fetchCachedTmdbData();
+  if (!cache) return [];
+
+  // Collect all movies from cache lists, dedupe by ID
+  const allMovies = [
+    ...(cache.movies.trending_day || []),
+    ...(cache.movies.trending_week || []),
+    ...(cache.movies.popular || []),
+    ...(cache.movies.top_rated || []),
+    ...(cache.movies.now_playing || []),
+    ...(cache.movies.upcoming || []),
+  ];
+
+  const seen = new Set<number>();
+  const uniqueMovies = allMovies.filter((m) => {
+    if (seen.has(m.id)) return false;
+    seen.add(m.id);
+    return true;
+  });
+
+  // Filter by genre and sort by popularity
+  return uniqueMovies
+    .filter((m) => m.genre_ids?.includes(genreId))
+    .sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+}
+
+/**
+ * Get TV shows by genre, with cache fallback.
+ * - With API key: uses TMDB discover API (more results)
+ * - Without API key: filters cached TV shows by genre_ids
+ */
+export async function discoverTvShowsByGenreWithCache(
+  accessToken: string | null | undefined,
+  genreId: number
+): Promise<TmdbTvResult[]> {
+  if (accessToken) {
+    return discoverTvShowsByGenre(accessToken, genreId);
+  }
+
+  // Fallback: filter cached TV shows by genre
+  const cache = await fetchCachedTmdbData();
+  if (!cache) return [];
+
+  // Collect all TV shows from cache lists, dedupe by ID
+  const allTvShows = [
+    ...(cache.tv.trending_day || []),
+    ...(cache.tv.trending_week || []),
+    ...(cache.tv.popular || []),
+    ...(cache.tv.top_rated || []),
+    ...(cache.tv.on_the_air || []),
+    ...(cache.tv.airing_today || []),
+  ];
+
+  const seen = new Set<number>();
+  const uniqueTvShows = allTvShows.filter((s) => {
+    if (seen.has(s.id)) return false;
+    seen.add(s.id);
+    return true;
+  });
+
+  // Filter by genre and sort by popularity
+  return uniqueTvShows
+    .filter((s) => s.genre_ids?.includes(genreId))
+    .sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+}
