@@ -13,6 +13,62 @@ import { syncAllSources, syncAllVod, syncVodForSource, isVodStale } from './db/s
 import type { StoredChannel } from './db';
 import type { VodPlayInfo } from './types/media';
 
+/**
+ * Generate fallback stream URLs when primary fails.
+ * Live TV: .ts → .m3u8 → .m3u
+ * VOD: provider extension → .m3u8 → .ts
+ */
+function getStreamFallbacks(url: string, isLive: boolean): string[] {
+  // Extract base URL and current extension
+  const extMatch = url.match(/\.([a-z0-9]+)$/i);
+  if (!extMatch) return []; // No extension, can't generate fallbacks
+
+  const currentExt = extMatch[1].toLowerCase();
+  const baseUrl = url.slice(0, -currentExt.length - 1); // Remove .ext
+
+  if (isLive) {
+    // Live TV fallback order: .ts → .m3u8 → .m3u
+    const fallbacks: string[] = [];
+    if (currentExt !== 'm3u8') fallbacks.push(`${baseUrl}.m3u8`);
+    if (currentExt !== 'm3u') fallbacks.push(`${baseUrl}.m3u`);
+    return fallbacks;
+  } else {
+    // VOD fallback order: provider ext → .m3u8 → .ts
+    const fallbacks: string[] = [];
+    if (currentExt !== 'm3u8') fallbacks.push(`${baseUrl}.m3u8`);
+    if (currentExt !== 'ts') fallbacks.push(`${baseUrl}.ts`);
+    return fallbacks;
+  }
+}
+
+/**
+ * Try loading a stream URL with fallbacks on failure.
+ * Returns the successful URL or null if all failed.
+ */
+async function tryLoadWithFallbacks(
+  primaryUrl: string,
+  isLive: boolean,
+  mpv: NonNullable<typeof window.mpv>
+): Promise<{ success: boolean; url: string; error?: string }> {
+  // Try primary URL first
+  const result = await mpv.load(primaryUrl);
+  if (!result.error) {
+    return { success: true, url: primaryUrl };
+  }
+
+  // Try fallbacks
+  const fallbacks = getStreamFallbacks(primaryUrl, isLive);
+  for (const fallbackUrl of fallbacks) {
+    const fallbackResult = await mpv.load(fallbackUrl);
+    if (!fallbackResult.error) {
+      return { success: true, url: fallbackUrl };
+    }
+  }
+
+  // All failed - return original error
+  return { success: false, url: primaryUrl, error: result.error };
+}
+
 function App() {
   // mpv state
   const [mpvReady, setMpvReady] = useState(false);
@@ -110,11 +166,15 @@ function App() {
   const handleLoadStream = async (channel: StoredChannel) => {
     if (!window.mpv) return;
     setError(null);
-    const result = await window.mpv.load(channel.direct_url);
-    if (result.error) {
-      setError(result.error);
+    const result = await tryLoadWithFallbacks(channel.direct_url, true, window.mpv);
+    if (!result.success) {
+      setError(result.error ?? 'Failed to load stream');
     } else {
-      setCurrentChannel(channel);
+      // Update channel with working URL if fallback was used
+      setCurrentChannel(result.url !== channel.direct_url
+        ? { ...channel, direct_url: result.url }
+        : channel
+      );
       setPlaying(true);
     }
   };
@@ -163,21 +223,22 @@ function App() {
   const handlePlayVod = async (info: VodPlayInfo) => {
     if (!window.mpv) return;
     setError(null);
-    const result = await window.mpv.load(info.url);
-    if (result.error) {
-      setError(result.error);
+    const result = await tryLoadWithFallbacks(info.url, false, window.mpv);
+    if (!result.success) {
+      setError(result.error ?? 'Failed to load stream');
     } else {
       // Create a pseudo-channel for the now playing bar
+      const workingUrl = result.url;
       setCurrentChannel({
         stream_id: 'vod',
         name: info.title,
         stream_icon: '',
         epg_channel_id: '',
         category_ids: [],
-        direct_url: info.url,
+        direct_url: workingUrl,
         source_id: 'vod',
       });
-      setVodInfo(info);
+      setVodInfo({ ...info, url: workingUrl });
       setPlaying(true);
       // Close VOD pages when playing
       setActiveView('none');
