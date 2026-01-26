@@ -18,7 +18,7 @@ export const MediaCard = memo(function MediaCard({ item, type, onClick, size = '
   const [titleOverflows, setTitleOverflows] = useState(false);
   const titleRef = useRef<HTMLHeadingElement>(null);
 
-  // Check if title overflows (needs scroll)
+  // Check if title overflows (triggers marquee animation on hover)
   useEffect(() => {
     const el = titleRef.current;
     if (el) {

@@ -334,7 +334,7 @@ export async function syncVodMovies(source: Source): Promise<{ count: number; ca
   const BATCH_SIZE = 500;
 
   await db.transaction('rw', [db.vodMovies, db.vodCategories], async () => {
-    // Update categories (upsert)
+    // Replace categories atomically (delete old, insert new)
     await db.vodCategories.where('source_id').equals(source.id).filter(c => c.type === 'movie').delete();
     if (vodCategories.length > 0) {
       await db.vodCategories.bulkPut(vodCategories);
@@ -418,7 +418,7 @@ export async function syncVodSeries(source: Source): Promise<{ count: number; ca
   const BATCH_SIZE = 500;
 
   await db.transaction('rw', [db.vodSeries, db.vodCategories, db.vodEpisodes], async () => {
-    // Update categories (upsert)
+    // Replace categories atomically (delete old, insert new)
     await db.vodCategories.where('source_id').equals(source.id).filter(c => c.type === 'series').delete();
     if (vodCategories.length > 0) {
       await db.vodCategories.bulkPut(vodCategories);
