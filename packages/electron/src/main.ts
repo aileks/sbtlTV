@@ -74,7 +74,11 @@ async function createWindow(): Promise<void> {
     await mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    await mainWindow.loadFile(path.join(__dirname, '../../ui/dist/index.html'));
+    // Packaged app: UI is in resources/ui, unpackaged: relative path
+    const uiPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'ui', 'index.html')
+      : path.join(__dirname, '../../ui/dist/index.html');
+    await mainWindow.loadFile(uiPath);
   }
 
   mainWindow.on('closed', () => {
