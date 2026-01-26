@@ -26,6 +26,39 @@ export interface VodSyncResult {
 const DEFAULT_EPG_STALE_HOURS = 6;
 const DEFAULT_VOD_STALE_HOURS = 24;
 
+// Track deleted sources to prevent sync from writing results after deletion
+// This prevents the race condition where sync writes error AFTER clearSourceData runs
+const deletedSourceIds = new Set<string>();
+
+export function markSourceDeleted(sourceId: string) {
+  deletedSourceIds.add(sourceId);
+  // Clean up after 30 seconds (sync should be done by then)
+  setTimeout(() => deletedSourceIds.delete(sourceId), 30000);
+}
+
+function isSourceDeleted(sourceId: string): boolean {
+  return deletedSourceIds.has(sourceId);
+}
+
+// Reference counter for concurrent TMDB matching operations
+// Prevents race condition where Source A finishing sets tmdbMatching=false
+// while Source B is still running
+let tmdbMatchingCount = 0;
+
+function startTmdbMatching() {
+  tmdbMatchingCount++;
+  if (tmdbMatchingCount === 1) {
+    useUIStore.getState().setTmdbMatching(true);
+  }
+}
+
+function endTmdbMatching() {
+  tmdbMatchingCount = Math.max(0, tmdbMatchingCount - 1);
+  if (tmdbMatchingCount === 0) {
+    useUIStore.getState().setTmdbMatching(false);
+  }
+}
+
 // Sync EPG for all channels from a source using XMLTV
 async function syncEpgForSource(source: Source, channels: Channel[]): Promise<number> {
   if (!source.username || !source.password) return 0;
@@ -169,6 +202,12 @@ export async function syncSource(source: Source): Promise<SyncResult> {
       throw new Error(`Unsupported source type: ${source.type}`);
     }
 
+    // Check if source was deleted during sync
+    if (isSourceDeleted(source.id)) {
+      console.log(`[Sync] Source ${source.id} was deleted during sync, skipping write`);
+      return { success: false, channelCount: 0, categoryCount: 0, programCount: 0, error: 'Source deleted' };
+    }
+
     // Store channels and categories in Dexie
     await db.transaction('rw', [db.channels, db.categories, db.sourcesMeta], async () => {
       if (channels.length > 0) {
@@ -218,14 +257,18 @@ export async function syncSource(source: Source): Promise<SyncResult> {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
 
-    // Store error in metadata
-    await db.sourcesMeta.put({
-      source_id: source.id,
-      last_synced: new Date(),
-      channel_count: 0,
-      category_count: 0,
-      error: errorMsg,
-    });
+    // Don't write error if source was deleted during sync
+    if (!isSourceDeleted(source.id)) {
+      await db.sourcesMeta.put({
+        source_id: source.id,
+        last_synced: new Date(),
+        channel_count: 0,
+        category_count: 0,
+        error: errorMsg,
+      });
+    } else {
+      console.log(`[Sync] Source ${source.id} was deleted during sync, skipping error write`);
+    }
 
     return {
       success: false,
@@ -672,15 +715,15 @@ export async function syncVodForSource(source: Source): Promise<VodSyncResult> {
 
     // Match against TMDB exports (runs in background, no API calls)
     // This enriches movies/series with tmdb_id for the curated lists
-    // Track matching state globally so UI can show progress
-    useUIStore.getState().setTmdbMatching(true);
+    // Uses reference counting to handle concurrent syncs correctly
+    startTmdbMatching();
     Promise.all([
       matchMoviesWithTmdb(source.id),
       matchSeriesWithTmdb(source.id),
     ])
       .catch(console.error)
       .finally(() => {
-        useUIStore.getState().setTmdbMatching(false);
+        endTmdbMatching();
       });
 
     return {
