@@ -16,10 +16,9 @@ A desktop IPTV player built with Electron and mpv.
 
 Download the latest release for your platform from the [Releases](../../releases) page:
 
-- **Windows**: `.exe` installer or portable version (mpv included)
-- **macOS Apple Silicon**: `.dmg` for M1/M2/M3 (mpv included)
-- **macOS Intel**: `.dmg` (requires mpv via Homebrew - see below)
-- **Linux**: `.AppImage` or `.deb` (requires mpv - see below)
+- **Windows**: `.exe` installer (mpv included) ✅ *tested*
+- **macOS**: `.dmg` - ⚠️ *mpv bundling issue being debugged, fix coming soon* ([#13](../../issues/13))
+- **Linux**: `.AppImage` or `.deb` (requires mpv - see below) - *untested, feedback welcome*
 
 ### Linux / macOS Intel Users
 
