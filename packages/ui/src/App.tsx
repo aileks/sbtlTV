@@ -11,6 +11,7 @@ import { Logo } from './components/Logo';
 import { useSelectedCategory } from './hooks/useChannels';
 import { syncAllSources, syncAllVod, syncVodForSource, isVodStale } from './db/sync';
 import type { StoredChannel } from './db';
+import type { VodPlayInfo } from './types/media';
 
 function App() {
   // mpv state
@@ -22,6 +23,7 @@ function App() {
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [currentChannel, setCurrentChannel] = useState<StoredChannel | null>(null);
+  const [vodInfo, setVodInfo] = useState<VodPlayInfo | null>(null);
 
   // UI state
   const [showControls, setShowControls] = useState(true);
@@ -158,23 +160,24 @@ function App() {
   };
 
   // Play VOD content (movies/series)
-  const handlePlayVod = async (url: string, title: string) => {
+  const handlePlayVod = async (info: VodPlayInfo) => {
     if (!window.mpv) return;
     setError(null);
-    const result = await window.mpv.load(url);
+    const result = await window.mpv.load(info.url);
     if (result.error) {
       setError(result.error);
     } else {
       // Create a pseudo-channel for the now playing bar
       setCurrentChannel({
         stream_id: 'vod',
-        name: title,
+        name: info.title,
         stream_icon: '',
         epg_channel_id: '',
         category_ids: [],
-        direct_url: url,
+        direct_url: info.url,
         source_id: 'vod',
       });
+      setVodInfo(info);
       setPlaying(true);
       // Close VOD pages when playing
       setActiveView('none');
@@ -307,6 +310,7 @@ function App() {
         position={position}
         duration={duration}
         isVod={currentChannel?.stream_id === 'vod'}
+        vodInfo={vodInfo}
         onTogglePlay={handleTogglePlay}
         onStop={handleStop}
         onToggleMute={handleToggleMute}
