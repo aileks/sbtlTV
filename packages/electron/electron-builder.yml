@@ -29,12 +29,15 @@ win:
       arch:
         - x64
   icon: assets/icon-white.png
-  artifactName: ${productName}-${version}-win-${arch}.${ext}
 
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   license: ../../LICENSE
+  artifactName: ${productName}-${version}-win-${arch}-setup.${ext}
+
+portable:
+  artifactName: ${productName}-${version}-win-${arch}-portable.${ext}
 
 # macOS configuration
 mac:

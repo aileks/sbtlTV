@@ -2,6 +2,7 @@ import { db, clearSourceData, clearVodData, type SourceMeta, type StoredProgram,
 import { fetchAndParseM3U, XtreamClient } from '@sbtltv/local-adapter';
 import type { Source, Channel, Category, Movie, Series } from '@sbtltv/core';
 import { getEnrichedMovieExports, getEnrichedTvExports, findBestMatch, extractMatchParams } from '../services/tmdb-exports';
+import { useUIStore } from '../stores/uiStore';
 
 export interface SyncResult {
   success: boolean;
@@ -671,13 +672,16 @@ export async function syncVodForSource(source: Source): Promise<VodSyncResult> {
 
     // Match against TMDB exports (runs in background, no API calls)
     // This enriches movies/series with tmdb_id for the curated lists
-    // TODO: Handle catastrophic matching failures better. Currently errors only go to
-    // console.error which is stripped in production builds. If matching fails completely
-    // (DB corruption, OOM, etc.), user sees degraded experience (no curated lists) with
-    // no indication why. Consider: user-facing error notification, or accept as edge case
-    // where "clear app data" is the fix.
-    matchMoviesWithTmdb(source.id).catch(console.error);
-    matchSeriesWithTmdb(source.id).catch(console.error);
+    // Track matching state globally so UI can show progress
+    useUIStore.getState().setTmdbMatching(true);
+    Promise.all([
+      matchMoviesWithTmdb(source.id),
+      matchSeriesWithTmdb(source.id),
+    ])
+      .catch(console.error)
+      .finally(() => {
+        useUIStore.getState().setTmdbMatching(false);
+      });
 
     return {
       success: true,

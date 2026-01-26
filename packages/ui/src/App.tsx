@@ -9,7 +9,7 @@ import { MoviesPage } from './components/MoviesPage';
 import { SeriesPage } from './components/SeriesPage';
 import { Logo } from './components/Logo';
 import { useSelectedCategory } from './hooks/useChannels';
-import { useChannelSyncing, useVodSyncing } from './stores/uiStore';
+import { useChannelSyncing, useVodSyncing, useTmdbMatching } from './stores/uiStore';
 import { syncAllSources, syncAllVod, syncVodForSource, isVodStale } from './db/sync';
 import type { StoredChannel } from './db';
 import type { VodPlayInfo } from './types/media';
@@ -95,6 +95,7 @@ function App() {
   // Global sync state (from Settings)
   const channelSyncing = useChannelSyncing();
   const vodSyncing = useVodSyncing();
+  const tmdbMatching = useTmdbMatching();
 
   // Sync state
   const [syncing, setSyncing] = useState(false);
@@ -353,7 +354,7 @@ function App() {
         {!currentChannel && (
           <div className="placeholder">
             <Logo className="placeholder__logo" />
-            {(channelSyncing || vodSyncing) && (
+            {(channelSyncing || vodSyncing || tmdbMatching) ? (
               <div className="sync-status">
                 <div className="sync-status__spinner" />
                 <span className="sync-status__text">
@@ -361,9 +362,13 @@ function App() {
                     ? 'Syncing channels & VOD...'
                     : channelSyncing
                     ? 'Syncing channels...'
-                    : 'Syncing VOD...'}
+                    : vodSyncing
+                    ? 'Syncing VOD...'
+                    : 'Matching with TMDB...'}
                 </span>
               </div>
+            ) : (
+              <div className="placeholder__spacer" />
             )}
           </div>
         )}

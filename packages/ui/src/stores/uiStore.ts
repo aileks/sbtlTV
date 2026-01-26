@@ -19,8 +19,10 @@ interface UIState {
   // Sync state - persists across Settings open/close
   channelSyncing: boolean;
   vodSyncing: boolean;
+  tmdbMatching: boolean;
   setChannelSyncing: (value: boolean) => void;
   setVodSyncing: (value: boolean) => void;
+  setTmdbMatching: (value: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -35,8 +37,10 @@ export const useUIStore = create<UIState>((set) => ({
   // Sync state
   channelSyncing: false,
   vodSyncing: false,
+  tmdbMatching: false,
   setChannelSyncing: (value) => set({ channelSyncing: value }),
   setVodSyncing: (value) => set({ vodSyncing: value }),
+  setTmdbMatching: (value) => set({ tmdbMatching: value }),
 }));
 
 // Selectors for cleaner component code
@@ -51,3 +55,5 @@ export const useChannelSyncing = () => useUIStore((s) => s.channelSyncing);
 export const useSetChannelSyncing = () => useUIStore((s) => s.setChannelSyncing);
 export const useVodSyncing = () => useUIStore((s) => s.vodSyncing);
 export const useSetVodSyncing = () => useUIStore((s) => s.setVodSyncing);
+export const useTmdbMatching = () => useUIStore((s) => s.tmdbMatching);
+export const useSetTmdbMatching = () => useUIStore((s) => s.setTmdbMatching);
