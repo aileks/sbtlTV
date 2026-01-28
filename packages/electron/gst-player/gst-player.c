@@ -59,6 +59,7 @@ static guint32 frame_id_counter = 0;
 // Appsink callbacks run on the streaming thread. Queue + writer thread
 // prevents blocking GStreamer while the socket drains.
 static GAsyncQueue *frame_queue = NULL;
+// Approximate queue size for backpressure decisions (atomic via g_atomic_int_*).
 static gint frame_queue_size = 0;
 static int frame_writer_running = 0;
 static GThread *frame_writer_thread = NULL;
@@ -255,6 +256,7 @@ static void send_result(gint request_id, gboolean ok, const char *message) {
   fflush(stdout);
 }
 
+// Overlay is unused in appsink mode; keep stub for protocol compatibility.
 static void apply_video_overlay(void) {
   return;
 }
@@ -289,6 +291,7 @@ static int connect_frame_socket(void) {
 }
 
 static gboolean send_frame_payload(const guint8 *data, gsize size) {
+  // Blocking writes keep frame boundaries intact; dropping mid-frame corrupts the stream.
   if (frame_socket_fd < 0) return FALSE;
   gsize sent = 0;
   while (sent < size) {
@@ -307,6 +310,7 @@ static gboolean send_frame_packet(const FramePacket *packet) {
   if (!packet) return FALSE;
   if (frame_socket_fd < 0) return FALSE;
 
+  // Header is fixed-size and packed so the reader can parse without negotiation.
   FrameHeader header;
   header.magic = SBTLTV_FRAME_MAGIC;
   header.version = SBTLTV_FRAME_VERSION;
@@ -332,6 +336,7 @@ static void frame_packet_free(FramePacket *packet) {
 
 static gpointer frame_writer_thread_fn(gpointer data) {
   (void)data;
+  // Dedicated writer thread decouples appsink callbacks from socket backpressure.
   while (frame_writer_running) {
     FramePacket *packet = g_async_queue_pop(frame_queue);
     if (!packet) {
@@ -357,6 +362,7 @@ static gpointer frame_writer_thread_fn(gpointer data) {
 
 static GstFlowReturn on_new_sample(GstAppSink *appsink, gpointer user_data) {
   (void)user_data;
+  // Pulling the sample here keeps GStreamer in push mode; we copy into a queue.
   GstSample *sample = gst_app_sink_pull_sample(appsink);
   if (!sample) return GST_FLOW_ERROR;
 
@@ -392,6 +398,7 @@ static GstFlowReturn on_new_sample(GstAppSink *appsink, gpointer user_data) {
     g_atomic_int_add(&frame_queue_size, -1);
   }
 
+  // Copy buffer contents because the sample is released after this callback.
   FramePacket *packet = g_new0(FramePacket, 1);
   packet->info = info;
   packet->size = map.size;

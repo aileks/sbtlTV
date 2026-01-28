@@ -676,7 +676,7 @@ async function initMpv(): Promise<void> {
     }
     console.log('[mpv] Using binary:', mpvBinary);
 
-    const hwdec = process.env.SBTLTV_HWDEC || 'auto-safe';
+    const hwdec = 'auto-safe';
     const ytdl = process.env.SBTLTV_YTDL || 'no';
     const ytdlPath = process.env.SBTLTV_YTDL_PATH;
     const isLinux = process.platform === 'linux';
@@ -684,8 +684,6 @@ async function initMpv(): Promise<void> {
     const sessionType = process.env.XDG_SESSION_TYPE;
     const waylandDisplay = process.env.WAYLAND_DISPLAY;
     const isWayland = isLinux && (sessionType === 'wayland' || (waylandDisplay && waylandDisplay.trim().length > 0));
-    const voOverride = process.env.SBTLTV_MPV_VO;
-    const gpuContextOverride = process.env.SBTLTV_MPV_GPU_CONTEXT;
     let mpvArgs = [
       `--input-ipc-server=${SOCKET_PATH}`,
       '--no-osc',
@@ -711,14 +709,12 @@ async function initMpv(): Promise<void> {
       mpvArgs.push(`--ytdl-path=${ytdlPath}`);
     }
 
-    const vo = voOverride || (isLinux && isWayland ? 'dmabuf-wayland' : 'gpu');
+    const vo = isLinux && isWayland ? 'dmabuf-wayland' : 'gpu';
     mpvArgs.push(`--vo=${vo}`);
-    if (gpuContextOverride) {
-      mpvArgs.push(`--gpu-context=${gpuContextOverride}`);
-    } else if (isLinux) {
+    if (isLinux) {
       if (!isWayland) {
         mpvArgs.push('--gpu-context=x11egl');
-      } else if (vo === 'gpu' || vo === 'gpu-next') {
+      } else if (vo === 'gpu') {
         mpvArgs.push('--gpu-context=wayland');
       }
     }
@@ -736,7 +732,7 @@ async function initMpv(): Promise<void> {
       console.log('[mpv] Using separate mpv window');
       console.log(`[mpv] vo=${vo} hwdec=${hwdec}`);
       if (isLinux) {
-        console.log(`[mpv] session=${isWayland ? 'wayland' : 'x11'} gpu-context=${gpuContextOverride || 'auto'}`);
+        console.log(`[mpv] session=${isWayland ? 'wayland' : 'x11'}`);
       } else if (isMac) {
         console.log('[mpv] session=macOS');
       }

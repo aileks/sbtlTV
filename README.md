@@ -87,9 +87,6 @@ pnpm build
 
 # Run in development mode
 pnpm dev
-
-# Env flags
-cat docs/DEV_ENV.md
 ```
 
 ### Building Distributables
@@ -112,6 +109,7 @@ Output files will be in the `release/` directory.
 - Increase GStreamer verbosity: `GST_DEBUG=3 pnpm dev`
 - App log file + level (main + renderer):
   - `SBTLTV_LOG_FILE=/tmp/sbtltv-app.log SBTLTV_LOG_LEVEL=debug pnpm dev`
+  - Full dev flags: `docs/DEV_ENV.md`
 
 ## Configuration
 
