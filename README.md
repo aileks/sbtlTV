@@ -7,7 +7,7 @@ A desktop IPTV player built with Electron, GStreamer (Linux, X11 only), and mpv 
 - **Live TV** - Browse channels by category, view EPG program guide
 - **Movies** - Browse and play VOD movies with TMDB metadata matching
 - **TV Series** - Browse series with season/episode navigation
-- **Playback** - GStreamer (Linux, X11/Xwayland) and mpv (Windows/macOS)
+- **Playback** - GStreamer appsink (Linux, X11 enforced) and mpv (Windows/macOS)
 - **Multi-source** - Add multiple IPTV sources (Xtream Codes API)
 - **Stream Fallback** - Automatic URL format fallback (.ts → .m3u8 → .m3u)
 - **Offline Database** - IndexedDB storage for channels, EPG, and VOD catalog
@@ -32,9 +32,10 @@ brew install mpv
 choco install mpv
 ```
 
-### Linux (GStreamer X11 only)
+### Linux
 
-On Linux, sbtlTV uses a small GStreamer helper and embeds video into the Electron window via X11 (`GstVideoOverlay`). Wayland-native is not supported; X11 or XWayland is required.
+> [!IMPORTANT]  
+> On Linux, sbtlTV uses a small GStreamer helper that decodes to frames and renders them in the UI canvas. Wayland-native is not supported; the app forces X11/XWayland.
 
 Runtime requirements (names vary by distro):
 
@@ -86,6 +87,9 @@ pnpm build
 
 # Run in development mode
 pnpm dev
+
+# Env flags
+cat docs/DEV_ENV.md
 ```
 
 ### Building Distributables

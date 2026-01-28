@@ -40,6 +40,8 @@ enum {
   SBTLTV_FRAME_FORMAT_RGBA = 1,
 };
 
+// Fixed wire header for frame transport over the Unix socket.
+// Packed to keep layout stable across compiler settings.
 typedef struct __attribute__((packed)) {
   guint32 magic;
   guint16 version;
@@ -54,10 +56,13 @@ typedef struct __attribute__((packed)) {
 } FrameHeader;
 
 static guint32 frame_id_counter = 0;
+// Appsink callbacks run on the streaming thread. Queue + writer thread
+// prevents blocking GStreamer while the socket drains.
 static GAsyncQueue *frame_queue = NULL;
 static gint frame_queue_size = 0;
 static int frame_writer_running = 0;
 static GThread *frame_writer_thread = NULL;
+// Small queue to cap latency; newer frames win.
 static const gint FRAME_QUEUE_MAX = 3;
 
 typedef struct {
@@ -255,6 +260,7 @@ static void apply_video_overlay(void) {
 }
 
 static int connect_frame_socket(void) {
+  // Socket path is provided by Electron main via env.
   const char *path = g_getenv("SBTLTV_GST_FRAME_SOCKET");
   if (!path || path[0] == '\0') {
     send_line("error", "SBTLTV_GST_FRAME_SOCKET not set");
@@ -378,6 +384,7 @@ static GstFlowReturn on_new_sample(GstAppSink *appsink, gpointer user_data) {
     return GST_FLOW_ERROR;
   }
 
+  // Drop oldest frames when the queue is full to keep latency bounded.
   while (g_atomic_int_get(&frame_queue_size) >= FRAME_QUEUE_MAX) {
     FramePacket *old = g_async_queue_try_pop(frame_queue);
     if (!old) break;
@@ -858,6 +865,7 @@ static GstElement *create_video_sink(void) {
   GstElement *sink = gst_element_factory_make("appsink", "video_sink");
   if (!sink) return NULL;
 
+  // RGBA keeps the renderer path simple for the first appsink pass.
   GstCaps *caps = gst_caps_new_simple(
     "video/x-raw",
     "format", G_TYPE_STRING, "RGBA",
@@ -866,6 +874,7 @@ static GstElement *create_video_sink(void) {
   gst_app_sink_set_caps(GST_APP_SINK(sink), caps);
   gst_caps_unref(caps);
 
+  // sync=true keeps video timing tied to the pipeline clock.
   g_object_set(sink,
     "emit-signals", TRUE,
     "sync", TRUE,
