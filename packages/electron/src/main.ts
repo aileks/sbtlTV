@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, net as electronNet, dialog } from 'electron';
 import * as path from 'path';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, execFileSync } from 'child_process';
 import * as net from 'net';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -22,6 +22,7 @@ let requestId = 0;
 const pendingRequests = new Map<number, { resolve: (data: unknown) => void; reject: (err: Error) => void }>();
 
 // Track mpv state
+let isShuttingDown = false; // Track if we're intentionally closing
 interface MpvState {
   playing: boolean;
   volume: number;
@@ -88,6 +89,7 @@ async function createWindow(): Promise<void> {
 }
 
 function killMpv(): void {
+  isShuttingDown = true;
   if (mpvSocket) {
     mpvSocket.destroy();
     mpvSocket = null;
@@ -144,6 +146,13 @@ function findMpvBinary(): string | null {
     // Linux - rely on system mpv
     if (fs.existsSync('/usr/bin/mpv')) return '/usr/bin/mpv';
     if (fs.existsSync('/usr/local/bin/mpv')) return '/usr/local/bin/mpv';
+    // Fallback: check PATH (catches snap, flatpak, custom installs)
+    try {
+      const whichResult = execFileSync('which', ['mpv'], { encoding: 'utf-8' }).trim();
+      if (whichResult && fs.existsSync(whichResult)) return whichResult;
+    } catch {
+      // which failed, mpv not in PATH
+    }
     return null;
   }
 }
@@ -180,6 +189,9 @@ async function checkMpvAvailable(): Promise<boolean> {
 
 async function initMpv(): Promise<void> {
   if (!mainWindow) return;
+
+  // Reset shutdown flag when starting
+  isShuttingDown = false;
 
   try {
     // Clean up any existing socket (Unix only)
@@ -237,9 +249,17 @@ async function initMpv(): Promise<void> {
     }
 
     console.log('[mpv] Native window handle:', windowId);
-    console.log('[mpv] Using --wid embedding (single window mode)');
 
-    mpvArgs = [...mpvArgs, `--wid=${windowId}`];
+    // Wayland doesn't support --wid embedding, use separate window mode
+    const isWayland = process.platform === 'linux' &&
+      (process.env.XDG_SESSION_TYPE === 'wayland' || !!process.env.WAYLAND_DISPLAY);
+
+    if (isWayland) {
+      console.log('[mpv] Wayland detected, using separate window mode (--wid not supported)');
+    } else {
+      console.log('[mpv] Using --wid embedding (single window mode)');
+      mpvArgs = [...mpvArgs, `--wid=${windowId}`];
+    }
 
     console.log('[mpv] Starting with args:', mpvArgs.join(' '));
 
@@ -267,6 +287,23 @@ async function initMpv(): Promise<void> {
     mpvProcess.on('exit', (code) => {
       console.log('[mpv] Process exited with code:', code);
       mpvProcess = null;
+
+      // Clean up socket when process dies
+      if (mpvSocket) {
+        mpvSocket.destroy();
+        mpvSocket = null;
+      }
+
+      // Auto-restart if not intentionally shutting down
+      if (!isShuttingDown && mainWindow) {
+        console.log('[mpv] Unexpected exit, restarting in 1 second...');
+        sendToRenderer('mpv-error', 'mpv crashed, restarting...');
+        setTimeout(() => {
+          if (!isShuttingDown && mainWindow) {
+            initMpv();
+          }
+        }, 1000);
+      }
     });
 
     // Wait for mpv to create the socket, then connect
@@ -320,11 +357,13 @@ async function connectToMpvSocket(): Promise<void> {
 
     mpvSocket.on('error', (error: Error) => {
       console.error('[mpv] Socket error:', error.message);
+      mpvSocket = null;
       reject(error);
     });
 
     mpvSocket.on('close', () => {
       console.log('[mpv] Socket closed');
+      mpvSocket = null;
     });
   });
 }
