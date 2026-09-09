@@ -9,8 +9,10 @@
     "email": "thesubtleties@users.noreply.github.com"
   },
   "scripts": {
+    "start": "pnpm --filter @sbtltv/electron start",
     "dev": "pnpm --filter @sbtltv/electron dev",
     "build": "pnpm -r build",
+    "build:native": "pnpm --filter @sbtltv/mpv-texture build:native",
     "typecheck": "pnpm -r typecheck",
     "dist": "pnpm build && pnpm --filter @sbtltv/electron dist",
     "dist:win": "pnpm build && pnpm --filter @sbtltv/electron dist:win",
