@@ -73,6 +73,19 @@
           ]
         }]
       ]
+    },
+    {
+      # Build separately: a GYP dependency would also link this into the addon,
+      # bypassing the private dlopen scope and exposing Electron's FFmpeg.
+      "target_name": "mpv_runtime",
+      "type": "none",
+      "conditions": [["OS=='linux'", {
+        "type": "shared_library",
+        "product_prefix": "",
+        "sources": ["src/native/linux/mpv_runtime.cpp"],
+        "cflags_cc": ["-std=c++17", "-fno-builtin"],
+        "libraries": ["-Wl,--no-as-needed", "<!@(pkg-config --libs mpv)", "-Wl,--as-needed", "-ldl"]
+      }]]
     }
   ]
 }

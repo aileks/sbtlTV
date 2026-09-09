@@ -7,7 +7,7 @@
 
 #include "mpv_api.h"
 
-#include <iostream>
+#include <filesystem>
 
 namespace mpv_texture {
 
@@ -20,38 +20,33 @@ bool MpvApi::load(std::string& error) {
     if (create) return true;
 
 #ifdef __linux__
-    // These libraries exchange allocated memory across their own DSOs. Resolve
-    // them normally before deep-binding libmpv so each uses one allocator.
-    // If one cannot be found here, libmpv loads its own copy inside the
-    // deep-bound scope and playback dies with free(): invalid size, so say so.
-    static const char* preload_names[] = {"libpipewire-0.3.so.0", "libass.so.9", "libpulse.so.0"};
-    for (const char* preload_name : preload_names) {
-        if (!dlopen(preload_name, RTLD_NOW | RTLD_GLOBAL)) {
-            const char* reason = dlerror();
-            std::cerr << "[mpv-texture] warning: could not pre-load " << preload_name
-                      << " (" << (reason ? reason : "unknown") << "); "
-                      << "libmpv may crash if it loads a private copy" << std::endl;
-        }
+    Dl_info addon;
+    if (!dladdr(reinterpret_cast<void*>(&mpvApi), &addon) || !addon.dli_fname) {
+        error = "could not locate the native addon allocator runtime";
+        return false;
     }
-
+    const auto directory = std::filesystem::path(addon.dli_fname).parent_path();
+    // The shim, rather than libmpv itself, must be the root of the private
+    // scope so even dependency constructors use the host allocator.
     void* library = nullptr;
-    const char* library_names[] = {"libmpv.so.2", "libmpv.so.1", "libmpv.so"};
+    const char* library_names[] = {"mpv_runtime_2.so", "mpv_runtime_1.so"};
     std::string attempts;
     for (const char* library_name : library_names) {
-        library = dlopen(library_name, RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
+        library = dlopen((directory / library_name).c_str(), RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
         if (library) break;
         const char* reason = dlerror();
         if (!attempts.empty()) attempts += "; ";
         attempts += std::string(library_name) + ": " + (reason ? reason : "unknown error");
     }
     if (!library) {
-        error = "system libmpv not found (" + attempts + ")";
+        error = "could not load the allocator runtime and system libmpv (" + attempts + ")";
         return false;
     }
 
+    MpvApi loaded;
 #define LOAD_MPV_SYMBOL(member, symbol) \
-    member = reinterpret_cast<decltype(member)>(dlsym(library, symbol)); \
-    if (!member) { error = std::string("missing libmpv symbol: ") + symbol; return false; }
+    loaded.member = reinterpret_cast<decltype(member)>(dlsym(library, symbol)); \
+    if (!loaded.member) { error = std::string("missing libmpv symbol: ") + symbol; dlclose(library); return false; }
 
     LOAD_MPV_SYMBOL(create, "mpv_create");
     LOAD_MPV_SYMBOL(initialize, "mpv_initialize");
@@ -73,6 +68,7 @@ bool MpvApi::load(std::string& error) {
     LOAD_MPV_SYMBOL(renderContextReportSwap, "mpv_render_context_report_swap");
 
 #undef LOAD_MPV_SYMBOL
+    *this = loaded;
 #else
     create = &::mpv_create;
     initialize = &::mpv_initialize;

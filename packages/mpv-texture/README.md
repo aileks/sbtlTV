@@ -29,6 +29,7 @@ Native N-API addon for GPU-accelerated video playback using libmpv with zero-cop
 
 ### Linux
 - libmpv, EGL, GBM, libdrm, and OpenGL development packages
+- patchelf (used to build runtime variants for libmpv ABI 1 and 2)
 - A DRM render node supported by the active graphics driver
 - Node.js 18+
 
@@ -38,7 +39,7 @@ Native N-API addon for GPU-accelerated video playback using libmpv with zero-cop
 # Install dependencies
 npm install
 
-# Build native addon and TypeScript
+# Build TypeScript (install already builds the native addon)
 npm run build
 
 # Or build native only
@@ -222,6 +223,8 @@ Uses IOSurface for texture sharing. Works with Metal/OpenGL.
 
 ### Linux
 Uses EGL and GBM to render libmpv into DMA-BUF-backed textures imported through Electron NativePixmap handles. Runtime libmpv is supplied by the host system.
+
+Keep `mpv_runtime_1.so` and `mpv_runtime_2.so` beside `mpv_texture.node` when packaging. The loader selects the available host libmpv ABI. These libraries isolate libmpv's dependencies from Electron while forwarding allocation to Electron's allocator, including allocations made during subtitle rendering. No `LD_PRELOAD` wrapper is required.
 
 ## Bundling libmpv
 
