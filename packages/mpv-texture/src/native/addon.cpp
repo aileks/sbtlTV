@@ -151,12 +151,15 @@ Napi::Value Destroy(const Napi::CallbackInfo& info) {
     // Release thread-safe functions
     if (g_frameCallback) {
         g_frameCallback.Release();
+        g_frameCallback = {};
     }
     if (g_statusCallback) {
         g_statusCallback.Release();
+        g_statusCallback = {};
     }
     if (g_errorCallback) {
         g_errorCallback.Release();
+        g_errorCallback = {};
     }
 
     return env.Undefined();

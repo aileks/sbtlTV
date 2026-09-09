@@ -2,7 +2,7 @@
  * Bridge between mpv-texture native addon and Electron's sharedTexture API
  *
  * This module handles the integration of libmpv's GPU texture output
- * with Electron 40's sharedTexture API for zero-copy video rendering.
+ * with Electron's sharedTexture API for zero-copy video rendering.
  */
 
 import { BrowserWindow, sharedTexture, SharedTextureHandle } from 'electron';
@@ -33,6 +33,11 @@ export class MpvTextureBridge {
   private outstandingTextureReferences = 0;
   private destroyRequested = false;
   private destroyFinalized = false;
+  private rendererDisposed = false;
+  private retainedTransfers = new Set<ReturnType<typeof sharedTexture.importSharedTexture>>();
+  private destruction: Promise<void> | null = null;
+  private resolveDestruction?: () => void;
+  private rejectDestruction?: (error: unknown) => void;
   private statusCallback?: (status: MpvStatus) => void;
   private errorCallback?: (error: string) => void;
   private pipelineFailureCallback?: (error: string) => void;
@@ -79,6 +84,10 @@ export class MpvTextureBridge {
     config?: MpvConfig
   ): Promise<boolean> {
     this.window = window;
+    window.webContents.once('destroyed', () => {
+      this.rendererDisposed = true;
+      this.releaseRetainedTransfers();
+    });
 
     try {
       // Dynamic import of the native addon
@@ -153,7 +162,7 @@ export class MpvTextureBridge {
    * while both transfer slots are busy.
    */
   private handleFrame(textureInfo: TextureInfo): void {
-    if (this.destroyRequested || !this.window || !this.mpv) {
+    if (this.destroyRequested || this.pipelineFailureReported || !this.window || !this.mpv) {
       this.releaseFrame(textureInfo);
       return;
     }
@@ -177,7 +186,7 @@ export class MpvTextureBridge {
     this.activeSends++;
     void this.sendFrame(frame).finally(() => {
       this.activeSends--;
-      if (this.destroyRequested) {
+      if (this.destroyRequested || this.pipelineFailureReported) {
         this.tryFinalizeDestroy();
         return;
       }
@@ -191,9 +200,10 @@ export class MpvTextureBridge {
   private async sendFrame({ textureInfo, generation }: QueuedFrame): Promise<void> {
     let imported: ReturnType<typeof sharedTexture.importSharedTexture> | null = null;
     let releaseManagedByElectron = false;
+    let transferStarted = false;
     try {
       const targetWindow = this.window;
-      if (this.destroyRequested || !targetWindow || targetWindow.isDestroyed()) return;
+      if (this.destroyRequested || this.pipelineFailureReported || !targetWindow || targetWindow.isDestroyed()) return;
       const frameOwner = this.mpv;
       const frameStartedAt = performance.now();
       let referencesReleased = false;
@@ -242,6 +252,7 @@ export class MpvTextureBridge {
         generation,
         index: this.frameIndex++,
       } satisfies SharedTextureFrameMetadata;
+      transferStarted = true;
       await sharedTexture.sendSharedTexture(
         {
           frame: targetWindow.webContents.mainFrame,
@@ -257,14 +268,20 @@ export class MpvTextureBridge {
       this.stats.sendCount++;
       this.stats.sent++;
       this.consecutiveErrors = 0;
-      this.pipelineFailureReported = false;
     } catch (error) {
       this.stats.errors++;
       this.consecutiveErrors++;
       if (this.consecutiveErrors === 1 || this.consecutiveErrors === 5) {
         console.error(`[MpvTextureBridge] Frame error (${this.consecutiveErrors} consecutive):`, error);
       }
-      if (this.consecutiveErrors >= 5) {
+      if (transferStarted && imported) {
+        // A rejected send does not cancel Electron's queued renderer import.
+        // Keep the main reference until that renderer can no longer import it.
+        this.retainedTransfers.add(imported);
+        imported = null;
+        if (this.rendererDisposed) this.releaseRetainedTransfers();
+        this.reportPipelineFailure('Shared texture transfer failed; the renderer must be reset before retrying');
+      } else if (this.consecutiveErrors >= 5) {
         this.reportPipelineFailure(`Shared texture pipeline failed after ${this.consecutiveErrors} consecutive frame errors`);
       }
     } finally {
@@ -277,6 +294,9 @@ export class MpvTextureBridge {
    * Load a media URL
    */
   async load(url: string, options?: string): Promise<void> {
+    if (this.destroyRequested || this.pipelineFailureReported) {
+      throw new Error('Native playback must be reset before loading another stream');
+    }
     if (!this.mpv || !this.initialized) {
       throw new Error('Bridge not initialized');
     }
@@ -299,6 +319,7 @@ export class MpvTextureBridge {
    * Start playback
    */
   play(): void {
+    if (this.destroyRequested || this.pipelineFailureReported) return;
     this.mpv?.play();
   }
 
@@ -387,9 +408,12 @@ export class MpvTextureBridge {
     this.rendererConsecutiveErrors = 0;
   }
 
-  private reportPipelineFailure(message: string): void {
+  reportPipelineFailure(message: string): void {
     if (this.pipelineFailureReported) return;
     this.pipelineFailureReported = true;
+    if (this.pendingFrame) this.releaseFrame(this.pendingFrame.textureInfo);
+    this.pendingFrame = null;
+    this.mpv?.stop();
     this.pipelineFailureCallback?.(message);
   }
 
@@ -416,18 +440,18 @@ export class MpvTextureBridge {
    * Check if initialized
    */
   isInitialized(): boolean {
-    return this.initialized && (this.mpv?.isInitialized ?? false);
+    return this.initialized && !this.pipelineFailureReported && (this.mpv?.isInitialized ?? false);
   }
 
   /**
    * Destroy and clean up
    */
-  destroy(): void {
-    if (this.destroyFinalized) return;
-    if (this.destroyRequested) {
-      this.tryFinalizeDestroy();
-      return;
-    }
+  destroy(): Promise<void> {
+    if (this.destruction) return this.destruction;
+    this.destruction = new Promise<void>((resolve, reject) => {
+      this.resolveDestruction = resolve;
+      this.rejectDestruction = reject;
+    });
     this.destroyRequested = true;
     this.initialized = false;
     if (this.statsInterval) {
@@ -441,6 +465,15 @@ export class MpvTextureBridge {
     if (this.mpv?.isInitialized) this.mpv.stop();
     this.window = null;
     this.tryFinalizeDestroy();
+    return this.destruction;
+  }
+
+  private releaseRetainedTransfers(): void {
+    for (const imported of this.retainedTransfers) {
+      this.retainedTransfers.delete(imported);
+      imported.release();
+    }
+    this.tryFinalizeDestroy();
   }
 
   private tryFinalizeDestroy(): void {
@@ -450,8 +483,13 @@ export class MpvTextureBridge {
     this.destroyFinalized = true;
     const mpv = this.mpv;
     this.mpv = null;
-    if (mpv) mpv.destroy();
-    console.log('[MpvTextureBridge] Destroyed');
+    try {
+      if (mpv) mpv.destroy();
+      this.resolveDestruction?.();
+      console.log('[MpvTextureBridge] Destroyed');
+    } catch (error) {
+      this.rejectDestruction?.(error);
+    }
   }
 
   private releaseFrame(textureInfo: TextureInfo): void {

@@ -239,6 +239,7 @@ export interface SharedTextureApi {
   removeClearListener: () => void;
   /** Report whether the renderer could draw the latest frame; errors escalate in main. */
   reportDrawResult: (ok: boolean, message?: string) => void;
+  reportPipelineFailure: (message: string) => void;
   isAvailable: boolean;
 }
 
@@ -332,8 +333,7 @@ if (sharedTextureAvailable) {
         }
         if (frameCallback && imported) {
           const videoFrame = imported.getVideoFrame();
-          // Don't close videoFrame here - VideoCanvas manages frame lifecycle via rAF
-          // It will close the previous frame when a new one arrives
+          // VideoCanvas owns the frame and closes it after drawing or discarding it.
           frameCallback(videoFrame, metadata.index);
           imported.release();
         } else if (imported) {
@@ -366,6 +366,9 @@ contextBridge.exposeInMainWorld('sharedTexture', {
   },
   reportDrawResult: (ok: boolean, message?: string) => {
     reportFrameOutcome(ok === true, typeof message === 'string' ? message : undefined);
+  },
+  reportPipelineFailure: (message: string) => {
+    if (typeof message === 'string') ipcRenderer.send('shared-texture-pipeline-failure', message);
   },
   isAvailable: sharedTextureAvailable,
 } satisfies SharedTextureApi);

@@ -81,6 +81,7 @@ let pendingResume: { position: number; generation: number } | null = null;
 let loadGeneration = 0;
 let currentMedia: { url: string; startPosition: number } | null = null;
 let pipelineFailurePromptOpen = false;
+let nativeRecoveryInProgress = false;
 
 interface CompatibilityHandoff {
   url: string;
@@ -268,13 +269,14 @@ async function getChromiumGpuIdentity(): Promise<{ vendorId?: number; deviceId?:
   }
 }
 
-async function createWindow(): Promise<void> {
+async function createWindow(bounds?: Electron.Rectangle): Promise<void> {
   // On Windows, we use a transparent frameless window for mpv embedding
   const isWindows = process.platform === 'win32';
 
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,
+    ...bounds,
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
     backgroundColor: isWindows ? '#00000000' : '#000000',
@@ -330,7 +332,7 @@ async function createWindow(): Promise<void> {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
-    killMpv();
+    if (!nativeRecoveryInProgress) killMpv();
   });
 
   // Drive the renderer's "fullscreen" state (button icon + Esc-to-exit). macOS uses true OS
@@ -352,7 +354,9 @@ function killMpv(): void {
   // Clean up native mpv bridge
   if (mpvBridge) {
     try {
-      mpvBridge.destroy();
+      void mpvBridge.destroy().catch(error => {
+        debugLog(`Error destroying native bridge: ${error instanceof Error ? error.message : error}`, 'mpv');
+      });
     } catch (error) {
       debugLog(`Error destroying native bridge: ${error instanceof Error ? error.message : error}`, 'mpv');
     }
@@ -674,7 +678,7 @@ async function initNativeMpv(): Promise<boolean> {
       nativeInitError = bridge.initError ?? 'initialize returned false';
       console.warn('[mpv] Native bridge unavailable:', nativeInitError);
       debugLog(`Native bridge unavailable: ${nativeInitError}`, 'mpv');
-      bridge.destroy();
+      await bridge.destroy();
       return false;
     }
 
@@ -683,6 +687,7 @@ async function initNativeMpv(): Promise<boolean> {
 
     // Forward status updates to renderer
     bridge.onStatus((status) => {
+      if (nativeRecoveryInProgress || mpvBridge !== bridge) return;
       // Sync local state for getStatus calls
       updateSleepBlock(status.playing);
       mpvState.playing = status.playing;
@@ -710,11 +715,12 @@ async function initNativeMpv(): Promise<boolean> {
 
     // Forward errors to renderer
     bridge.onError((error) => {
+      if (nativeRecoveryInProgress || mpvBridge !== bridge) return;
       sendToRenderer('mpv-error', error);
     });
 
     bridge.onPipelineFailure((error) => {
-      void handleNativePipelineFailure(error);
+      if (mpvBridge === bridge) void handleNativePipelineFailure(error);
     });
 
     bridge.onDiagnostics((message) => {
@@ -731,52 +737,104 @@ async function initNativeMpv(): Promise<boolean> {
     debugLog(`Native bridge failed: ${message}`, 'mpv');
     nativeInitError = message;
     // Clean up partially-initialized bridge to avoid leaking GL contexts/threads
-    bridge?.destroy();
+    await bridge?.destroy();
     return false;
   }
 }
 
+async function resetNativePlayback(): Promise<void> {
+  if (nativeRecoveryInProgress || !mainWindow || !mpvBridge) return;
+  nativeRecoveryInProgress = true;
+  const oldWindow = mainWindow;
+  const oldBridge = mpvBridge;
+  const bounds = oldWindow.getNormalBounds();
+  const maximized = oldWindow.isMaximized();
+  const fullscreen = oldWindow.isFullScreen();
+  const { volume, muted } = mpvState;
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  try {
+    if (resumeTimer) { clearTimeout(resumeTimer); resumeTimer = null; }
+    updateSleepBlock(false);
+    pendingResume = null;
+    loadGeneration++;
+    useNativeMpv = false;
+    const destruction = oldBridge.destroy();
+    oldWindow.destroy();
+    await Promise.race([
+      destruction,
+      new Promise<never>((_resolve, reject) => {
+        deadline = setTimeout(() => reject(new Error('Native playback cleanup did not finish; restart is required')), 10000);
+      }),
+    ]);
+    mpvBridge = null;
+    currentMedia = null;
+    Object.assign(mpvState, { playing: false, position: 0, duration: 0, width: 0, height: 0 });
+    isShuttingDown = false;
+    await createWindow(bounds);
+    const replacement = mainWindow as BrowserWindow | null;
+    if (!replacement || replacement.isDestroyed()) throw new Error('Playback reset was interrupted');
+    if (maximized) replacement.maximize();
+    if (fullscreen) replacement.setFullScreen(true);
+    if (!await initNativeMpv()) throw new Error(nativeInitError ?? 'Native playback could not be restarted');
+    const replacementBridge = mpvBridge as MpvTextureBridgeType | null;
+    replacementBridge?.pause();
+    replacementBridge?.setVolume(volume);
+    if (replacementBridge?.getStatus()?.muted !== muted) replacementBridge?.toggleMute();
+  } finally {
+    if (deadline) clearTimeout(deadline);
+    nativeRecoveryInProgress = false;
+  }
+}
+
+function restartInCompatibilityMode(handoff: CompatibilityHandoff | null): void {
+  if (handoff) saveCompatibilityHandoff(handoff);
+  const relaunchArgs = process.argv.slice(1).filter(argument => argument !== MPV_COMPATIBILITY_ARG);
+  app.relaunch({ args: [...relaunchArgs, MPV_COMPATIBILITY_ARG] });
+  app.exit(0);
+}
+
 async function handleNativePipelineFailure(error: string): Promise<void> {
   debugLog(`Native pipeline failure: ${error}`, 'mpv');
-  if (process.platform !== 'linux') {
-    // No compatibility relaunch on macOS; surface it like any other playback error.
-    sendToRenderer('mpv-error', error);
-    return;
-  }
-  if (pipelineFailurePromptOpen || !mainWindow) return;
+  if (pipelineFailurePromptOpen || nativeRecoveryInProgress || !mainWindow) return;
   pipelineFailurePromptOpen = true;
   const failurePosition = mpvState.position > 0 ? mpvState.position : currentMedia?.startPosition ?? 0;
+  const handoff = currentMedia ? { url: currentMedia.url, position: failurePosition } : null;
+  const isLinux = process.platform === 'linux';
 
   try {
     mpvBridge?.stop();
     const result = await dialog.showMessageBox(mainWindow, {
       type: 'error',
       title: 'Native video playback failed',
-      message: 'The native Linux video pipeline stopped working.',
-      detail: `${error}\n\nRestart sbtlTV in floating-window compatibility mode for this launch?`,
-      buttons: ['Restart in Compatibility Mode', 'Cancel'],
+      message: 'Native video playback stopped working.',
+      detail: `${error}\n\nResetting native playback recreates the window and returns to the guide with playback stopped.`,
+      buttons: isLinux ? ['Restart in Compatibility Mode', 'Reset Native Playback'] : ['Reset Native Playback', 'Cancel'],
       defaultId: 0,
       cancelId: 1,
       noLink: true,
     });
 
-    if (result.response !== 0) {
-      sendToRenderer('mpv-error', 'Native video pipeline failed. Select a channel to retry, or restart in compatibility mode.');
+    if (isLinux && result.response === 0) {
+      restartInCompatibilityMode(handoff);
       return;
     }
-
-    if (currentMedia) {
-      saveCompatibilityHandoff({
-        url: currentMedia.url,
-        position: failurePosition,
-      });
+    if (!isLinux && result.response !== 0) {
+      sendToRenderer('mpv-error', error);
+      return;
     }
-
-    const relaunchArgs = process.argv.slice(1).filter((argument) => argument !== MPV_COMPATIBILITY_ARG);
-    app.relaunch({ args: [...relaunchArgs, MPV_COMPATIBILITY_ARG] });
-    app.exit(0);
+    await resetNativePlayback();
   } catch (handlerError) {
-    debugLog(`Pipeline failure handling error: ${handlerError instanceof Error ? handlerError.message : handlerError}`, 'mpv');
+    const message = handlerError instanceof Error ? handlerError.message : String(handlerError);
+    debugLog(`Pipeline failure handling error: ${message}`, 'mpv');
+    const result = await dialog.showMessageBox({
+      type: 'error',
+      title: 'Native playback reset failed',
+      message,
+      buttons: isLinux ? ['Restart in Compatibility Mode', 'Quit'] : ['Quit'],
+      cancelId: isLinux ? 1 : 0,
+    });
+    if (isLinux && result.response === 0) restartInCompatibilityMode(handoff);
+    else app.quit();
   } finally {
     pipelineFailurePromptOpen = false;
   }
@@ -982,6 +1040,11 @@ ipcMain.handle('window-set-fullscreen', () => {
 });
 
 async function loadMedia(url: string, startPosition?: number): Promise<{ success?: boolean; error?: string }> {
+  if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
+  if (useNativeMpv && mpvBridge && !mpvBridge.isInitialized()) {
+    void handleNativePipelineFailure('Reset native playback before selecting another channel');
+    return { error: 'Native playback must be reset' };
+  }
   const resumeAt = startPosition && startPosition > 0 ? Math.floor(startPosition) : 0;
   currentMedia = { url, startPosition: resumeAt };
   debugLog(`mpv-load called${resumeAt ? ` (resume @ ${resumeAt}s)` : ''}`, 'mpv');
@@ -1032,6 +1095,7 @@ ipcMain.handle('mpv-load', async (_event, url: string, startPosition?: number) =
 });
 
 ipcMain.handle('mpv-play', async () => {
+  if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   if (useNativeMpv && mpvBridge) {
     try {
       mpvBridge.play();
@@ -1051,6 +1115,7 @@ ipcMain.handle('mpv-play', async () => {
 });
 
 ipcMain.handle('mpv-pause', async () => {
+  if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   if (useNativeMpv && mpvBridge) {
     try {
       mpvBridge.pause();
@@ -1070,6 +1135,7 @@ ipcMain.handle('mpv-pause', async () => {
 });
 
 ipcMain.handle('mpv-toggle-pause', async () => {
+  if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   if (useNativeMpv && mpvBridge) {
     try {
       const status = mpvBridge.getStatus();
@@ -1094,6 +1160,7 @@ ipcMain.handle('mpv-toggle-pause', async () => {
 });
 
 ipcMain.handle('mpv-volume', async (_event, volume: number) => {
+  if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   if (useNativeMpv && mpvBridge) {
     try {
       mpvBridge.setVolume(volume);
@@ -1113,6 +1180,7 @@ ipcMain.handle('mpv-volume', async (_event, volume: number) => {
 });
 
 ipcMain.handle('mpv-toggle-mute', async () => {
+  if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   if (useNativeMpv && mpvBridge) {
     try {
       mpvBridge.toggleMute();
@@ -1132,6 +1200,7 @@ ipcMain.handle('mpv-toggle-mute', async () => {
 });
 
 ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
+  if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   if (useNativeMpv && mpvBridge) {
     try {
       mpvBridge.seek(seconds);
@@ -1151,6 +1220,7 @@ ipcMain.handle('mpv-seek', async (_event, seconds: number) => {
 });
 
 ipcMain.handle('mpv-stop', async () => {
+  if (nativeRecoveryInProgress || pipelineFailurePromptOpen) return { error: 'Native playback is being reset' };
   debugLog('mpv-stop called', 'mpv');
   pendingResume = null;
   currentMedia = null;
@@ -1261,12 +1331,19 @@ ipcMain.handle('debug-log-renderer', async (_event, message: string) => {
 
 // Renderer-side shared-texture failures (import or draw) feed the same
 // pipeline escalation as main-side send errors.
-ipcMain.on('shared-texture-frame-error', (_event, message: unknown) => {
+ipcMain.on('shared-texture-frame-error', (event, message: unknown) => {
+  if (nativeRecoveryInProgress || event.sender !== mainWindow?.webContents) return;
   mpvBridge?.reportRendererFrameError(typeof message === 'string' ? message : 'unknown error');
 });
 
-ipcMain.on('shared-texture-frame-ok', () => {
+ipcMain.on('shared-texture-frame-ok', (event) => {
+  if (nativeRecoveryInProgress || event.sender !== mainWindow?.webContents) return;
   mpvBridge?.reportRendererFrameOk();
+});
+
+ipcMain.on('shared-texture-pipeline-failure', (event, message: unknown) => {
+  if (nativeRecoveryInProgress || event.sender !== mainWindow?.webContents || typeof message !== 'string') return;
+  mpvBridge?.reportPipelineFailure(message);
 });
 
 ipcMain.handle('debug-open-log-folder', async () => {
@@ -1787,6 +1864,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  if (nativeRecoveryInProgress) return;
   if (resumeTimer) { clearTimeout(resumeTimer); resumeTimer = null; }
   updateSleepBlock(false);
   killMpv();
@@ -1796,6 +1874,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
+  if (nativeRecoveryInProgress) return;
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
