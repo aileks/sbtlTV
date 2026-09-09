@@ -73,6 +73,7 @@ mac:
   icon: assets/sbtltv-logo-white.png
   artifactName: ${productName}-${version}-mac-${arch}.${ext}
   category: public.app-category.entertainment
+  minimumSystemVersion: '13.0'
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: entitlements.mac.plist

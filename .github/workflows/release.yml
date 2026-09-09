@@ -33,17 +33,20 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: 'pnpm'
 
       - name: Install native build dependencies (Linux)
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libmpv-dev libegl1-mesa-dev libgbm-dev libdrm-dev libgl-dev pkg-config
+          sudo apt-get install -y libmpv-dev libegl1-mesa-dev libgbm-dev libdrm-dev libgl-dev pkg-config patchelf
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Install Electron
+        run: pnpm --filter @sbtltv/electron exec install-electron
 
       # Windows: Bundle external mpv binary (--wid mode, no native addon)
       - name: Install mpv (Windows)
