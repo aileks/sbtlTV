@@ -94,6 +94,9 @@ std::unique_ptr<LinuxEglContext> LinuxEglContext::create(
 
     const auto candidates = enumerateRenderNodes(preferred_vendor_id, preferred_device_id);
     for (const auto& candidate : candidates) {
+        // Don't silently switch away from Chromium's GPU: cross-device imports
+        // can succeed while producing only black frames.
+        if (preferred_vendor_id != 0 && !candidate.preferred) continue;
         if (debug_logging) {
             std::cout << "[LinuxEGL] Trying " << candidate.path
                       << " vendor=0x" << std::hex << candidate.vendor_id
@@ -108,9 +111,10 @@ std::unique_ptr<LinuxEglContext> LinuxEglContext::create(
 
     std::cerr << "[LinuxEGL] No usable DRM render node found" << std::endl;
     if (error_out) {
-        *error_out = candidates.empty()
-            ? "no DRM render nodes found"
-            : "no usable DRM render node (last attempt: " + context->m_lastFailure + ")";
+        if (candidates.empty()) *error_out = "no DRM render nodes found";
+        else if (context->m_lastFailure.empty()) *error_out = "no DRM render node matches Chromium's GPU";
+        else *error_out = std::string(preferred_vendor_id != 0 ? "could not initialize Chromium's GPU" : "no usable DRM render node") +
+            " (last attempt: " + context->m_lastFailure + ")";
     }
     return nullptr;
 }
