@@ -254,19 +254,20 @@ async function getHighPerformanceWebGlRenderer(): Promise<unknown> {
 }
 
 async function getChromiumGpuIdentity(): Promise<{ vendorId?: number; deviceId?: number }> {
+  const webGlRenderer = await getHighPerformanceWebGlRenderer();
+  let devices: unknown;
   try {
-    const webGlRenderer = await getHighPerformanceWebGlRenderer();
     const info: unknown = await app.getGPUInfo('basic');
-    const devices = info && typeof info === 'object'
+    devices = info && typeof info === 'object'
       ? (info as Record<string, unknown>).gpuDevice
       : undefined;
-    const gpu = selectChromiumGpuIdentity(devices, webGlRenderer);
-    debugLog(`GPU selection source=${gpu.source}`, 'mpv');
-    return gpu;
   } catch (error) {
     debugLog(`Could not read Chromium GPU identity: ${error instanceof Error ? error.message : error}`, 'mpv');
-    return {};
   }
+  // Selection errors must reach initNativeMpv's compatibility fallback.
+  const gpu = selectChromiumGpuIdentity(devices, webGlRenderer);
+  debugLog(`GPU selection source=${gpu.source}`, 'mpv');
+  return gpu;
 }
 
 async function createWindow(bounds?: Electron.Rectangle): Promise<void> {

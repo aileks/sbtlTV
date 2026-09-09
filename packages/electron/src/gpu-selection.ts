@@ -49,15 +49,29 @@ function inferWebGlVendorId(value: unknown): number | undefined {
 export function selectChromiumGpuIdentity(devicesValue: unknown, webGlRenderer: unknown): GpuIdentity {
   const devices = normalizeDevices(devicesValue);
   const webGlVendorId = inferWebGlVendorId(webGlRenderer);
-  const webGlDevice = webGlVendorId === undefined
-    ? undefined
-    : devices.find((device) => device.vendorId === webGlVendorId);
-  const selected = webGlDevice ?? devices.find((device) => device.active) ?? devices[0];
+  if (webGlVendorId !== undefined) {
+    const renderer = webGlRenderer && typeof webGlRenderer === 'object'
+      ? (webGlRenderer as Record<string, unknown>).renderer
+      : undefined;
+    // ANGLE includes a hexadecimal PCI device ID on supported backends.
+    const deviceIdMatch = typeof renderer === 'string' && renderer.startsWith('ANGLE')
+      ? renderer.match(/\(0x([0-9a-f]{1,8})\)/i)
+      : null;
+    const deviceId = deviceIdMatch ? Number.parseInt(deviceIdMatch[1], 16) : undefined;
+    const matches = devices.filter(device => device.vendorId === webGlVendorId &&
+      (deviceId === undefined || device.deviceId === deviceId));
+    if (matches.length !== 1) {
+      throw new Error("Cannot uniquely identify Chromium's WebGL GPU; native playback requires a matching device");
+    }
+    return { vendorId: matches[0].vendorId, deviceId: matches[0].deviceId, source: 'webgl' };
+  }
+
+  const selected = devices.find((device) => device.active) ?? devices[0];
 
   if (!selected) return { source: 'none' };
   return {
     vendorId: selected.vendorId,
     deviceId: selected.deviceId,
-    source: webGlDevice ? 'webgl' : selected.active ? 'active' : 'first',
+    source: selected.active ? 'active' : 'first',
   };
 }

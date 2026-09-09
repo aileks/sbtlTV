@@ -216,7 +216,6 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
   const drawErrorCount = useRef(0);
   const contextLostRef = useRef(false);
   const cadenceRef = useRef<FrameCadenceStats>(createFrameCadenceStats());
-  const drawFailedRef = useRef(false);
   const activeRef = useRef(visible);
   const hasVideoFrameRef = useRef(false);
   const initializationFailureRef = useRef<string | null>(null);
@@ -255,15 +254,6 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
     if (!visible) cancelRestorationTimer();
     else checkRendererHealth();
   }, [visible, cancelRestorationTimer, checkRendererHealth]);
-
-  // Forward draw failures to main so a broken pipeline can fall back instead
-  // of showing a black canvas. Every failure is sent; recovery once per episode.
-  const reportDrawOutcome = useCallback((error: string | null) => {
-    const failed = error !== null;
-    if (!failed && !drawFailedRef.current) return;
-    drawFailedRef.current = failed;
-    window.sharedTexture?.reportDrawResult(!failed, error ?? undefined);
-  }, []);
 
   // Handle frame - render immediately
   const handleFrame = useCallback((videoFrame: VideoFrame, index: number) => {
@@ -326,7 +316,8 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
     } finally {
       videoFrame.close();
     }
-    reportDrawOutcome(drawError);
+    // Preload also tracks import failures, so it must see successful draws.
+    window.sharedTexture?.reportDrawResult(drawError === null, drawError ?? undefined);
     if (drawError === null) drawErrorCount.current = 0;
     const drawMs = performance.now() - drawStartedAt;
     cadence.drawMs += drawMs;
@@ -348,7 +339,7 @@ export function VideoCanvas({ visible, className, flipY = false, flipX = false }
         lastFrameIndex: index,
       };
     }
-  }, [flipY, flipX, reportDrawOutcome, checkRendererHealth]);
+  }, [flipY, flipX, checkRendererHealth]);
 
 
   // Initialize WebGL on mount

@@ -33,3 +33,39 @@ test('accepts hexadecimal GPU IDs returned as strings', () => {
     { vendorId: 0x8086, deviceId: 0x1234, source: 'webgl' }
   );
 });
+
+const sameVendorDevices = [
+  { active: true, vendorId: 0x1002, deviceId: 0x164e },
+  { active: false, vendorId: 0x1002, deviceId: 0x744c },
+];
+
+test('matches the WebGL device ID when multiple GPUs share a vendor', () => {
+  assert.deepEqual(
+    selectChromiumGpuIdentity(sameVendorDevices, {
+      vendor: 'Google Inc. (AMD)',
+      renderer: 'ANGLE (AMD, AMD Radeon RX 7900 XTX (0x0000744C), OpenGL)',
+    }),
+    { vendorId: 0x1002, deviceId: 0x744c, source: 'webgl' }
+  );
+});
+
+test('rejects ambiguous or unmatched WebGL devices instead of guessing', () => {
+  for (const renderer of [
+    'ANGLE (AMD, AMD Radeon Graphics, OpenGL)',
+    'ANGLE (AMD, AMD Radeon Graphics (0x00009999), OpenGL)',
+  ]) {
+    assert.throws(
+      () => selectChromiumGpuIdentity(sameVendorDevices, { vendor: 'AMD', renderer }),
+      /Cannot uniquely identify Chromium's WebGL GPU/
+    );
+  }
+});
+
+test('rejects two physical GPUs with identical vendor and device IDs', () => {
+  assert.throws(
+    () => selectChromiumGpuIdentity([sameVendorDevices[1], sameVendorDevices[1]], {
+      vendor: 'AMD', renderer: 'ANGLE (AMD, Radeon (0x0000744C), OpenGL)',
+    }),
+    /Cannot uniquely identify Chromium's WebGL GPU/
+  );
+});
