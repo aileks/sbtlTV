@@ -58,6 +58,7 @@ bool MpvApi::load(std::string& error) {
     LOAD_MPV_SYMBOL(errorString, "mpv_error_string");
     LOAD_MPV_SYMBOL(observeProperty, "mpv_observe_property");
     LOAD_MPV_SYMBOL(setWakeupCallback, "mpv_set_wakeup_callback");
+    LOAD_MPV_SYMBOL(requestLogMessages, "mpv_request_log_messages");
     LOAD_MPV_SYMBOL(waitEvent, "mpv_wait_event");
     LOAD_MPV_SYMBOL(wakeup, "mpv_wakeup");
     LOAD_MPV_SYMBOL(renderContextCreate, "mpv_render_context_create");
@@ -80,6 +81,7 @@ bool MpvApi::load(std::string& error) {
     errorString = &::mpv_error_string;
     observeProperty = &::mpv_observe_property;
     setWakeupCallback = &::mpv_set_wakeup_callback;
+    requestLogMessages = &::mpv_request_log_messages;
     waitEvent = &::mpv_wait_event;
     wakeup = &::mpv_wakeup;
     renderContextCreate = &::mpv_render_context_create;

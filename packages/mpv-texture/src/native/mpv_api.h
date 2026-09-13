@@ -21,6 +21,7 @@ struct MpvApi {
     decltype(&::mpv_error_string) errorString = nullptr;
     decltype(&::mpv_observe_property) observeProperty = nullptr;
     decltype(&::mpv_set_wakeup_callback) setWakeupCallback = nullptr;
+    decltype(&::mpv_request_log_messages) requestLogMessages = nullptr;
     decltype(&::mpv_wait_event) waitEvent = nullptr;
     decltype(&::mpv_wakeup) wakeup = nullptr;
     decltype(&::mpv_render_context_create) renderContextCreate = nullptr;

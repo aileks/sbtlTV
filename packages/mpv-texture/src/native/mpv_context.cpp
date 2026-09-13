@@ -285,6 +285,11 @@ bool MpvContext::create(const MpvConfig& config) {
         return false;
     }
 
+    // mpv only delivers log events once asked. Verbose when debug logging is on
+    // (renderer decisions, hwdec, FBO formats), warnings otherwise. Errors still
+    // reach the JS error callback; the rest goes to stderr for crash triage.
+    mpvApi().requestLogMessages(m_mpv, config.debugLogging ? "v" : "warn");
+
     // Create texture sharing
     if (config.debugLogging) std::cout << "[MpvContext] Initializing texture adapter" << std::endl;
     m_textureShare = createTextureShare();
@@ -545,7 +550,9 @@ void MpvContext::handleEvent(mpv_event* event) {
         }
         case MPV_EVENT_LOG_MESSAGE: {
             auto* msg = static_cast<mpv_event_log_message*>(event->data);
-            // Only report errors
+            // msg->text ends with a newline already.
+            std::cerr << "[mpv:" << msg->prefix << "] " << msg->text;
+            // Only report errors to JS
             if (msg->log_level <= MPV_LOG_LEVEL_ERROR) {
                 std::lock_guard<std::mutex> lock(m_callbackMutex);
                 if (m_errorCallback) {
