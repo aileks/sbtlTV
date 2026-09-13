@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, net as electronNet, dialog, shell, powerSaveBlocker, powerMonitor, safeStorage } from 'electron';
 import * as path from 'path';
+import * as os from 'os';
 import { spawn, ChildProcess, execFileSync } from 'child_process';
 import * as net from 'net';
 import * as fs from 'fs';
@@ -1774,6 +1775,28 @@ app.whenReady().then(async () => {
   if (app.isPackaged && !isPortable && !isLinuxNonAppImage) {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
+
+    // The mac feed carries minimumSystemVersion as a Darwin kernel version (see
+    // release.yml) because electron-updater compares it against os.release().
+    // Keep that comparison, but tell the user why updates stopped instead of
+    // silently reporting "up to date" on a Mac that can no longer run new builds.
+    let unsupportedOsReported = false;
+    autoUpdater.isUpdateSupported = (info: UpdateInfo) => {
+      const minimum = info.minimumSystemVersion;
+      if (!minimum || process.platform !== 'darwin') return true;
+      const darwinMajor = Number.parseInt(os.release(), 10);
+      const requiredDarwinMajor = Number.parseInt(minimum, 10);
+      if (!Number.isFinite(darwinMajor) || !Number.isFinite(requiredDarwinMajor) || darwinMajor >= requiredDarwinMajor) return true;
+      // Darwin 20..24 are macOS 11..15; Darwin 25 is macOS 26.
+      const requiredMacOS = requiredDarwinMajor >= 25 ? requiredDarwinMajor + 1 : requiredDarwinMajor - 9;
+      const message = `sbtlTV ${info.version} requires macOS ${requiredMacOS} or newer; this Mac is on macOS ${process.getSystemVersion()}. Updates are paused.`;
+      debugLog(message, 'updater');
+      if (!unsupportedOsReported) {
+        unsupportedOsReported = true;
+        mainWindow?.webContents.send('updater-error', { message });
+      }
+      return false;
+    };
 
     autoUpdater.on('update-available', (info: UpdateInfo) => {
       debugLog(`Update available: ${info.version}`, 'updater');

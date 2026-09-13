@@ -93,6 +93,22 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.platform == 'mac' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ matrix.platform == 'mac' && secrets.APPLE_TEAM_ID || '' }}
 
+      # electron-builder puts mac.minimumSystemVersion into Info.plist only; the
+      # update feed never gets it, so an older client would install a build its
+      # OS cannot launch. electron-updater compares the feed field against
+      # os.release(), the Darwin kernel version, so write it in Darwin terms:
+      # macOS 13 (Ventura) = Darwin 22. Bump this together with
+      # mac.minimumSystemVersion in electron-builder.yml.
+      - name: Pin macOS update feed minimum (Darwin 22 = macOS 13)
+        if: matrix.platform == 'mac'
+        run: |
+          if grep -q '^minimumSystemVersion:' release/latest-mac.yml; then
+            sed -i '' 's/^minimumSystemVersion:.*/minimumSystemVersion: 22.0.0/' release/latest-mac.yml
+          else
+            printf 'minimumSystemVersion: 22.0.0\n' >> release/latest-mac.yml
+          fi
+          grep -n '^minimumSystemVersion:' release/latest-mac.yml
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
