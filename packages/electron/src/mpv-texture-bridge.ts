@@ -43,6 +43,11 @@ export class MpvTextureBridge {
   private pipelineFailureCallback?: (error: string) => void;
   private diagnosticsCallback?: (message: string) => void;
   private consecutiveErrors = 0;
+  // A timed-out transfer usually means the renderer's main thread is busy (a
+  // large library sync, for example) and it recovers on its own. Escalate only
+  // when transfers keep timing out back to back for this long.
+  private firstConsecutiveErrorAt = 0;
+  private readonly transferTimeoutFailureMs = 3000;
   private rendererConsecutiveErrors = 0;
   private pipelineFailureReported = false;
   private lastInitError: string | null = null;
@@ -271,6 +276,8 @@ export class MpvTextureBridge {
     } catch (error) {
       this.stats.errors++;
       this.consecutiveErrors++;
+      const now = performance.now();
+      if (this.consecutiveErrors === 1) this.firstConsecutiveErrorAt = now;
       if (this.consecutiveErrors === 1 || this.consecutiveErrors === 5) {
         console.error(`[MpvTextureBridge] Frame error (${this.consecutiveErrors} consecutive):`, error);
       }
@@ -280,7 +287,10 @@ export class MpvTextureBridge {
         this.retainedTransfers.add(imported);
         imported = null;
         if (this.rendererDisposed) this.releaseRetainedTransfers();
-        this.reportPipelineFailure('Shared texture transfer failed; the renderer must be reset before retrying');
+        const failingForMs = now - this.firstConsecutiveErrorAt;
+        if (this.consecutiveErrors >= 3 && failingForMs >= this.transferTimeoutFailureMs) {
+          this.reportPipelineFailure(`Shared texture transfers timed out for ${Math.round(failingForMs / 1000)}s; the renderer must be reset before retrying`);
+        }
       } else if (this.consecutiveErrors >= 5) {
         this.reportPipelineFailure(`Shared texture pipeline failed after ${this.consecutiveErrors} consecutive frame errors`);
       }

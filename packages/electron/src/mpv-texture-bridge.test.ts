@@ -56,8 +56,9 @@ async function createBridge() {
       });
     },
   };
+  let now = 0;
   const context = vm.createContext({
-    console: { log() {}, warn() {}, error() {} }, Buffer, performance,
+    console: { log() {}, warn() {}, error() {} }, Buffer, performance: { now: () => now },
     setInterval: () => 0, clearInterval() {},
   });
   const electron = new vm.SyntheticModule(['sharedTexture'], function () {
@@ -86,6 +87,7 @@ async function createBridge() {
     bridge, webContents, nativeReleases, failures, imports, sends,
     get destroyed() { return destroyed; },
     get stops() { return stops; },
+    advance(ms: number) { now += ms; },
     frame(bufferId: number) {
       assert.ok(frameCallback);
       frameCallback({ kind: 'nativePixmap', bufferId, width: 16, height: 16, format: 'bgra',
@@ -111,32 +113,74 @@ test('successful transfer retains the native buffer until renderer references ar
   assert.equal(state.destroyed, true);
 });
 
-test('first timeout stops transfers and retains uncertain ownership until renderer disposal', async () => {
+test('a brief run of timeouts is tolerated and a later success re-arms the bridge', async () => {
   const state = await createBridge();
   state.frame(1);
   state.frame(2);
-  state.frame(3);
   state.sends[0].reject();
+  await settle();
+  state.advance(1000);
+  state.sends[1].reject();
+  await settle();
+  assert.equal(state.failures.length, 0);
+  assert.equal(state.stops, 0);
+  // Timed-out imports stay retained: Electron may still deliver them.
+  assert.equal(state.imports[0].mainReleases, 0);
+  assert.equal(state.imports[1].mainReleases, 0);
+  state.frame(3);
+  state.sends[2].acknowledge();
+  await settle();
+  assert.equal(state.bridge.isInitialized(), true);
+  state.frame(4);
+  state.advance(1000);
+  state.sends[3].reject();
+  await settle();
+  assert.equal(state.failures.length, 0, 'counter restarted after the success');
+  const destruction = state.bridge.destroy();
+  state.imports[2].releaseRenderer();
+  state.webContents.emit('destroyed');
+  await destruction;
+  assert.equal(state.imports[0].mainReleases, 1);
+  assert.equal(state.imports[1].mainReleases, 1);
+  assert.equal(state.imports[3].mainReleases, 1);
+});
+
+test('timeouts persisting for 3s stop transfers and retain uncertain ownership until renderer disposal', async () => {
+  const state = await createBridge();
+  state.frame(1);
+  state.frame(2);
+  state.sends[0].reject();
+  await settle();
+  state.advance(1000);
+  state.sends[1].reject();
+  await settle();
+  assert.equal(state.failures.length, 0);
+  state.frame(3);
+  state.frame(4);
+  assert.equal(state.sends.length, 4);
+  state.advance(2000);
+  state.sends[2].reject();
   await settle();
   assert.equal(state.failures.length, 1);
   assert.equal(state.stops, 1);
   assert.equal(state.imports[0].mainReleases, 0);
-  assert.deepEqual(state.nativeReleases, [3]);
-  state.frame(4);
-  assert.equal(state.sends.length, 2);
+  assert.deepEqual(state.nativeReleases, []);
+  state.frame(5);
+  assert.equal(state.sends.length, 4, 'no transfers start after failure');
+  assert.deepEqual(state.nativeReleases, [5]);
   await assert.rejects(state.bridge.load('test'), /must be reset/);
 
   // An already-started successful transfer cannot re-arm the failed bridge.
-  state.sends[1].acknowledge();
+  state.sends[3].acknowledge();
   await settle();
   assert.equal(state.bridge.isInitialized(), false);
   const destruction = state.bridge.destroy();
-  state.imports[1].releaseRenderer();
+  state.imports[3].releaseRenderer();
   assert.equal(state.destroyed, false);
   state.webContents.emit('destroyed');
   await destruction;
   assert.equal(state.imports[0].mainReleases, 1);
-  assert.deepEqual([...state.nativeReleases].sort(), [1, 2, 3, 4]);
+  assert.deepEqual([...state.nativeReleases].sort(), [1, 2, 3, 4, 5]);
   assert.equal(state.failures.length, 1);
 });
 
